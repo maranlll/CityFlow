@@ -2,7 +2,7 @@
 #define CITYFLOW_CONFIG_H
 
 namespace CityFlow {
-    const int MAX_NUM_CARS_ON_SEGMENT = 10;
+const int MAX_NUM_CARS_ON_SEGMENT = 10;
 }
 
-#endif //CITYFLOW_CONFIG_H
+#endif // CITYFLOW_CONFIG_H

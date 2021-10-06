@@ -1,372 +1,490 @@
 #ifndef CITYFLOW_VEHICLE
 #define CITYFLOW_VEHICLE
 
-#include "utility/utility.h"
 #include "flow/route.h"
-#include "vehicle/router.h"
+#include "utility/utility.h"
 #include "vehicle/lanechange.h"
+#include "vehicle/router.h"
 
-#include <utility>
 #include <memory>
+#include <utility>
 
 namespace CityFlow {
-    class Lane;
+class Lane;
 
-    class LaneLink;
+class LaneLink;
 
-    class Intersection;
+class Intersection;
 
-    class Route;
+class Route;
 
-    class Cross;
+class Cross;
 
-    class Drivable;
+class Drivable;
 
-    class Engine;
+class Engine;
 
-    class Point;
+class Point;
 
-    class Flow;
+class Flow;
 
-    struct VehicleInfo {
-        double speed = 0;
-        double len = 5;
-        double width = 2;
-        double maxPosAcc = 4.5;
-        double maxNegAcc = 4.5;
-        double usualPosAcc = 2.5;
-        double usualNegAcc = 2.5;
-        double minGap = 2;
-        double maxSpeed = 16.66667;
-        double headwayTime = 1;
-        double yieldDistance = 5;
-        double turnSpeed = 8.3333;
-        std::shared_ptr<const Route> route = nullptr;
+struct VehicleInfo {
+    double speed = 0;
+    double len = 5;
+    double width = 2;
+    double maxPosAcc = 4.5;
+    double maxNegAcc = 4.5;
+    double usualPosAcc = 2.5;
+    double usualNegAcc = 2.5;
+    double minGap = 2;
+    double maxSpeed = 16.66667;
+    double headwayTime = 1;
+    double yieldDistance = 5;
+    double turnSpeed = 8.3333;
+    std::shared_ptr<const Route> route = nullptr;
+};
+
+class Vehicle {
+    friend class Router;
+    friend class LaneChange;
+    friend class SimpleLaneChange;
+    friend class Archive;
+
+  private:
+    struct Buffer {
+        bool isDisSet = false;
+        bool isSpeedSet = false;
+        bool isDrivableSet = false;
+        bool isNotifiedVehicles = false;
+        bool isEndSet = false;
+        bool isEnterLaneLinkTimeSet = false;
+        bool isBlockerSet = false;
+        bool isCustomSpeedSet = false;
+        double dis;
+        double deltaDis;
+        double speed;
+        double customSpeed;
+        Drivable *drivable;
+        std::vector<Vehicle *> notifiedVehicles;
+        bool end;
+        Vehicle *blocker = nullptr;
+        size_t enterLaneLinkTime;
     };
 
+    struct LaneChangeInfo {
+        short partnerType = 0; // 0 for no partner; 1 for real vehicle; 2 for shadow vehicle;
+        Vehicle *partner = nullptr;
+        double offset = 0;
+        size_t segmentIndex = 0;
+    };
+
+    struct ControllerInfo {
+        double dis = 0;
+        Drivable *drivable = nullptr;
+        Drivable *prevDrivable = nullptr;
+        double approachingIntersectionDistance;
+        double gap;
+        size_t enterLaneLinkTime;
+        Vehicle *leader = nullptr;
+        Vehicle *blocker = nullptr;
+        bool end = false;
+        bool running = false;
+        Router router;
+        ControllerInfo(Vehicle *vehicle, std::shared_ptr<const Route> route, std::mt19937 *rnd);
+        ControllerInfo(Vehicle *vehicle, const ControllerInfo &other);
+    };
+
+    VehicleInfo vehicleInfo;
+    ControllerInfo controllerInfo;
+    LaneChangeInfo laneChangeInfo;
+
+    Buffer buffer;
+
+    int priority;
+    std::string id;
+    double enterTime;
+
+    Engine *engine;
+
+    std::shared_ptr<LaneChange> laneChange;
+
+    bool routeValid = false;
+    Flow *flow;
+
+  public:
+    bool isStraightHold = false;
+
+    Vehicle(const Vehicle &vehicle, Flow *flow = nullptr);
 
-    class Vehicle {
-        friend class Router;
-        friend class LaneChange;
-        friend class SimpleLaneChange;
-        friend class Archive;
-    private:
-        struct Buffer {
-            bool isDisSet = false;
-            bool isSpeedSet = false;
-            bool isDrivableSet = false;
-            bool isNotifiedVehicles = false;
-            bool isEndSet = false;
-            bool isEnterLaneLinkTimeSet = false;
-            bool isBlockerSet = false;
-            bool isCustomSpeedSet = false;
-            double dis;
-            double deltaDis;
-            double speed;
-            double customSpeed;
-            Drivable *drivable;
-            std::vector<Vehicle *> notifiedVehicles;
-            bool end;
-            Vehicle *blocker = nullptr;
-            size_t enterLaneLinkTime;
-        };
-
-        struct LaneChangeInfo {
-            short partnerType = 0; //0 for no partner; 1 for real vehicle; 2 for shadow vehicle;
-            Vehicle *partner = nullptr;
-            double offset = 0;
-            size_t segmentIndex = 0;
-        };
+    Vehicle(const Vehicle &vehicle, const std::string &id, Engine *engine, Flow *flow = nullptr);
+
+    Vehicle(const VehicleInfo &init, const std::string &id, Engine *engine, Flow *flow = nullptr);
 
-        struct ControllerInfo {
-            double dis = 0;
-            Drivable *drivable = nullptr;
-            Drivable *prevDrivable = nullptr;
-            double approachingIntersectionDistance;
-            double gap;
-            size_t enterLaneLinkTime;
-            Vehicle *leader = nullptr;
-            Vehicle *blocker = nullptr;
-            bool end = false;
-            bool running = false;
-            Router router;
-            ControllerInfo(Vehicle *vehicle, std::shared_ptr<const Route> route, std::mt19937 *rnd);
-            ControllerInfo(Vehicle *vehicle, const ControllerInfo &other);
-        };
+    void setDeltaDistance(double dis);
+
+    void setSpeed(double speed);
 
-        VehicleInfo vehicleInfo;
-        ControllerInfo controllerInfo;
-        LaneChangeInfo laneChangeInfo;
+    void setCustomSpeed(double speed) {
+        buffer.customSpeed = speed;
+        buffer.isCustomSpeedSet = true;
+    }
+
+    void setDis(double dis) {
+        buffer.dis = dis;
+        buffer.isDisSet = true;
+    }
+
+    void setDrivable(Drivable *drivable) {
+        buffer.drivable = drivable;
+        buffer.isDrivableSet = true;
+    }
 
-        Buffer buffer;
+    bool hasSetDrivable() const {
+        return buffer.isDrivableSet;
+    }
 
-        int priority;
-        std::string id;
-        double enterTime;
+    bool hasSetSpeed() const {
+        return buffer.isSpeedSet;
+    }
 
-        Engine *engine;
+    bool hasSetCustomSpeed() const {
+        return buffer.isCustomSpeedSet;
+    }
 
-        std::shared_ptr<LaneChange> laneChange;
+    double getBufferSpeed() const {
+        return buffer.speed;
+    };
 
-        bool routeValid = false;
-        Flow *flow;
+    bool hasSetEnd() const {
+        return buffer.isEndSet;
+    }
+
+    void setEnd(bool end) {
+        buffer.end = end;
+        buffer.isEndSet = true;
+    }
 
-    public:
+    void unSetEnd() {
+        buffer.isEndSet = false;
+    }
 
-        bool isStraightHold = false;
+    void unSetDrivable() {
+        buffer.isDrivableSet = false;
+    }
 
-        Vehicle(const Vehicle &vehicle, Flow *flow = nullptr);
+    void setEnterLaneLinkTime(size_t enterLaneLinkTime) {
+        buffer.enterLaneLinkTime = enterLaneLinkTime;
+        buffer.isEnterLaneLinkTimeSet = true;
+    }
 
-        Vehicle(const Vehicle &vehicle, const std::string &id, Engine *engine, Flow *flow = nullptr);
+    void setBlocker(Vehicle *blocker) {
+        buffer.blocker = blocker;
+        buffer.isBlockerSet = true;
+    }
 
-        Vehicle(const VehicleInfo &init, const std::string &id, Engine *engine, Flow *flow = nullptr);
+    double getBufferDis() const {
+        return buffer.dis;
+    }
 
-        void setDeltaDistance(double dis);
+    void update();
 
-        void setSpeed(double speed);
+    void setPriority(int priority) {
+        this->priority = priority;
+    }
 
-        void setCustomSpeed(double speed) {
-            buffer.customSpeed = speed;
-            buffer.isCustomSpeedSet = true;
-        }
+    inline std::string getId() const {
+        return id;
+    }
 
-        void setDis(double dis) {
-            buffer.dis = dis;
-            buffer.isDisSet = true;
-        }
+    inline double getSpeed() const {
+        return vehicleInfo.speed;
+    }
 
-        void setDrivable(Drivable *drivable) {
-            buffer.drivable = drivable;
-            buffer.isDrivableSet = true;
-        }
+    inline double getLen() const {
+        return vehicleInfo.len;
+    }
 
-        bool hasSetDrivable() const { return buffer.isDrivableSet; }
+    inline double getWidth() const {
+        return vehicleInfo.width;
+    }
 
-        bool hasSetSpeed() const { return buffer.isSpeedSet; }
+    inline double getDistance() const {
+        return controllerInfo.dis;
+    }
 
-        bool hasSetCustomSpeed() const { return buffer.isCustomSpeedSet; }
+    Point getPoint() const;
 
-        double getBufferSpeed() const { return buffer.speed; };
+    inline double getMaxPosAcc() const {
+        return vehicleInfo.maxPosAcc;
+    }
 
-        bool hasSetEnd() const { return buffer.isEndSet; }
+    inline double getMaxNegAcc() const {
+        return vehicleInfo.maxNegAcc;
+    }
 
-        void setEnd(bool end) {
-            buffer.end = end;
-            buffer.isEndSet = true;
-        }
+    inline double getUsualPosAcc() const {
+        return vehicleInfo.usualPosAcc;
+    }
 
-        void unSetEnd() { buffer.isEndSet = false; }
+    inline double getUsualNegAcc() const {
+        return vehicleInfo.usualNegAcc;
+    }
 
-        void unSetDrivable() { buffer.isDrivableSet = false; }
+    inline double getMinGap() const {
+        return vehicleInfo.minGap;
+    }
 
-        void setEnterLaneLinkTime(size_t enterLaneLinkTime) {
-            buffer.enterLaneLinkTime = enterLaneLinkTime;
-            buffer.isEnterLaneLinkTimeSet = true;
-        }
+    inline double getYieldDistance() const {
+        return vehicleInfo.yieldDistance;
+    }
 
-        void setBlocker(Vehicle *blocker) {
-            buffer.blocker = blocker;
-            buffer.isBlockerSet = true;
-        }
+    inline double getTurnSpeed() const {
+        return vehicleInfo.turnSpeed;
+    }
 
-        double getBufferDis() const { return buffer.dis; }
+    inline Vehicle *getBlocker() const {
+        return controllerInfo.blocker;
+    }
 
-        void update();
+    inline Vehicle *getBufferBlocker() {
+        return buffer.blocker;
+    }
 
-        void setPriority(int priority) { this->priority = priority; }
+    Drivable *getCurDrivable() const;
 
-        inline std::string getId() const { return id; }
+    Lane *getCurLane() const {
+        if (getCurDrivable()->isLane())
+            return (Lane *)getCurDrivable();
+        else
+            return nullptr;
+    }
 
-        inline double getSpeed() const { return vehicleInfo.speed; }
+    inline Drivable *getNextDrivable(int i = 0) {
+        return controllerInfo.router.getNextDrivable(i);
+    }
 
-        inline double getLen() const { return vehicleInfo.len; }
+    inline Drivable *getPrevDrivable(int i = 1) const {
+        return controllerInfo.prevDrivable;
+    }
 
-        inline double getWidth() const { return vehicleInfo.width; }
+    inline int getPriority() const {
+        return priority;
+    }
 
-        inline double getDistance() const { return controllerInfo.dis; }
+    std::pair<Point, Point> getCurPos() const;
 
-        Point getPoint() const;
+    ControlInfo getNextSpeed(double interval);
 
-        inline double getMaxPosAcc() const { return vehicleInfo.maxPosAcc; }
+    Drivable *getChangedDrivable() const;
 
-        inline double getMaxNegAcc() const { return vehicleInfo.maxNegAcc; }
+    double getEnterTime() const {
+        return enterTime;
+    }
 
-        inline double getUsualPosAcc() const { return vehicleInfo.usualPosAcc; }
+    bool isEnd() const {
+        return controllerInfo.end;
+    }
 
-        inline double getUsualNegAcc() const { return vehicleInfo.usualNegAcc; }
+    bool isIntersectionRelated();
 
-        inline double getMinGap() const { return vehicleInfo.minGap; }
+    double getBrakeDistanceAfterAccel(double acc, double dec, double interval) const;
 
-        inline double getYieldDistance() const { return vehicleInfo.yieldDistance; }
+    inline double getMinBrakeDistance() const {
+        return 0.5 * vehicleInfo.speed * vehicleInfo.speed / vehicleInfo.maxNegAcc;
+    }
 
-        inline double getTurnSpeed() const { return vehicleInfo.turnSpeed; }
+    inline double getUsualBrakeDistance() const {
+        return 0.5 * vehicleInfo.speed * vehicleInfo.speed / vehicleInfo.usualNegAcc;
+    }
 
-        inline Vehicle *getBlocker() const { return controllerInfo.blocker; }
+    double getNoCollisionSpeed(double vL, double dL, double vF, double dF, double gap, double interval, double targetGap) const;
 
-        inline Vehicle *getBufferBlocker() { return buffer.blocker; }
+    double getCarFollowSpeed(double interval);
 
-        Drivable *getCurDrivable() const;
+    double getStopBeforeSpeed(double distance, double interval) const;
 
-        Lane * getCurLane() const {
-            if (getCurDrivable()->isLane()) return (Lane *)getCurDrivable();
-            else return nullptr;
-        }
+    int getReachSteps(double distance, double targetSpeed, double acc) const;
 
-        inline Drivable *getNextDrivable(int i = 0) {
-            return controllerInfo.router.getNextDrivable(i);
-        }
+    int getReachStepsOnLaneLink(double distance, LaneLink *laneLink) const;
 
-        inline Drivable *getPrevDrivable(int i = 1) const {
-            return controllerInfo.prevDrivable;
-        }
+    double getDistanceUntilSpeed(double speed, double acc) const;
 
-        inline int getPriority() const { return priority; }
+    bool canYield(double dist) const;
 
-        std::pair<Point, Point> getCurPos() const;
+    void updateLeaderAndGap(Vehicle *leader);
 
-        ControlInfo getNextSpeed(double interval);
+    Vehicle *getLeader() const {
+        return controllerInfo.leader;
+    }
 
-        Drivable *getChangedDrivable() const;
+    inline double getEnterLaneLinkTime() const {
+        return controllerInfo.enterLaneLinkTime;
+    }
 
-        double getEnterTime() const { return enterTime; }
+    inline double getHeadwayTime() const {
+        return vehicleInfo.headwayTime;
+    }
 
-        bool isEnd() const { return controllerInfo.end; }
+    inline double getMaxSpeed() const {
+        return vehicleInfo.maxSpeed;
+    }
 
-        bool isIntersectionRelated();
+    inline double getApproachingIntersectionDistance() const {
+        return 0.0;
+    }
 
-        double getBrakeDistanceAfterAccel(double acc, double dec, double interval) const;
+    double getIntersectionRelatedSpeed(double interval);
 
-        inline double getMinBrakeDistance() const { return 0.5 * vehicleInfo.speed * vehicleInfo.speed / vehicleInfo.maxNegAcc; }
+    inline bool isRunning() const {
+        return controllerInfo.running;
+    }
 
-        inline double getUsualBrakeDistance() const { return 0.5 * vehicleInfo.speed * vehicleInfo.speed / vehicleInfo.usualNegAcc; }
+    inline void setRunning(bool isRunning = true) {
+        controllerInfo.running = isRunning;
+    }
 
-        double getNoCollisionSpeed(double vL, double dL, double vF, double dF, double gap, double interval,
-            double targetGap) const;
+    inline bool hasPartner() const {
+        return laneChangeInfo.partnerType > 0;
+    }
 
-        double getCarFollowSpeed(double interval);
+    inline bool isReal() const {
+        return laneChangeInfo.partnerType != 2;
+    }
 
-        double getStopBeforeSpeed(double distance, double interval) const;
+    inline size_t getSegmentIndex() const {
+        return laneChangeInfo.segmentIndex;
+    }
 
-        int getReachSteps(double distance, double targetSpeed, double acc) const;
+    inline void setSegmentIndex(int segmentIndex) {
+        laneChangeInfo.segmentIndex = segmentIndex;
+    }
 
-        int getReachStepsOnLaneLink(double distance, LaneLink* laneLink) const;
+    inline void setShadow(Vehicle *veh) {
+        laneChangeInfo.partnerType = 1, laneChangeInfo.partner = veh;
+    }
 
-        double getDistanceUntilSpeed(double speed, double acc) const;
+    inline void setParent(Vehicle *veh) {
+        laneChangeInfo.partnerType = 2, laneChangeInfo.partner = veh;
+    }
 
-        bool canYield(double dist) const;
+    void setLane(Lane *nextLane);
 
-        void updateLeaderAndGap(Vehicle *leader);
+    void finishChanging();
 
-        Vehicle *getLeader() const { return controllerInfo.leader; }
+    inline void setOffset(double offset) {
+        laneChangeInfo.offset = offset;
+    }
 
-        inline double getEnterLaneLinkTime() const { return controllerInfo.enterLaneLinkTime; }
+    inline double getOffset() const {
+        return laneChangeInfo.offset;
+    }
 
-        inline double getHeadwayTime() const { return vehicleInfo.headwayTime; }
+    inline Vehicle *getPartner() const {
+        return laneChangeInfo.partner;
+    }
 
-        inline double getMaxSpeed() const { return vehicleInfo.maxSpeed; }
+    inline void setId(const std::string &id) {
+        this->id = id;
+    }
 
-        inline double getApproachingIntersectionDistance() const { return 0.0; }
+    // for lane change
+    inline void makeLaneChangeSignal(double interval) {
+        laneChange->makeSignal(interval);
+    }
 
-        double getIntersectionRelatedSpeed(double interval);
+    inline bool planLaneChange() {
+        return laneChange->planChange();
+    }
 
-        inline bool isRunning() const { return controllerInfo.running; }
+    void receiveSignal(Vehicle *sender);
 
-        inline void setRunning(bool isRunning = true) { controllerInfo.running = isRunning; }
+    void sendSignal() {
+        laneChange->sendSignal();
+    }
 
-        inline bool hasPartner() const { return laneChangeInfo.partnerType > 0; }
+    void clearSignal() {
+        laneChange->clearSignal();
+    }
 
-        inline bool isReal() const { return laneChangeInfo.partnerType != 2; }
+    void updateLaneChangeNeighbor() {
+        laneChange->updateLeaderAndFollower();
+    }
 
-        inline size_t getSegmentIndex() const { return laneChangeInfo.segmentIndex; }
+    std::shared_ptr<LaneChange> getLaneChange() {
+        return laneChange;
+    }
 
-        inline void setSegmentIndex(int segmentIndex) { laneChangeInfo.segmentIndex = segmentIndex; }
+    std::list<Vehicle *>::iterator getListIterator();
 
-        inline void setShadow(Vehicle *veh) { laneChangeInfo.partnerType = 1, laneChangeInfo.partner = veh; }
+    void insertShadow(Vehicle *shadow) {
+        laneChange->insertShadow(shadow);
+    }
 
-        inline void setParent(Vehicle *veh) { laneChangeInfo.partnerType = 2, laneChangeInfo.partner = veh; }
+    bool onValidLane() const {
+        return controllerInfo.router.onValidLane();
+    }
 
-        void setLane(Lane *nextLane);
+    Lane *getValidLane() const {
+        assert(getCurDrivable()->isLane());
+        return controllerInfo.router.getValidLane(dynamic_cast<Lane *>(getCurDrivable()));
+    }
 
-        void finishChanging();
+    bool canChange() const {
+        return laneChange->canChange();
+    }
 
-        inline void setOffset(double offset) { laneChangeInfo.offset = offset; }
+    double getGap() const {
+        return controllerInfo.gap;
+    }
 
-        inline double getOffset() const { return laneChangeInfo.offset; }
+    int laneChangeUrgency() const {
+        return laneChange->signalSend->urgency;
+    }
 
-        inline Vehicle *getPartner() const { return laneChangeInfo.partner; }
+    Vehicle *getTargetLeader() const {
+        return laneChange->targetLeader;
+    }
 
-        inline void setId(const std::string & id) { this->id = id; }
+    int lastLaneChangeDirection() const {
+        return laneChange->lastDir;
+    }
 
-        //for lane change
-        inline void makeLaneChangeSignal(double interval){
-            laneChange->makeSignal(interval);
-        }
+    int getLaneChangeDirection() const {
+        if (!laneChange->signalSend)
+            return 0;
+        return laneChange->signalSend->direction;
+    }
 
-        inline bool planLaneChange(){
-            return laneChange->planChange();
-        }
+    bool isChanging() const {
+        return laneChange->changing;
+    }
 
-        void receiveSignal(Vehicle * sender);
+    double getMaxOffset() const {
+        auto target = laneChange->signalSend->target;
+        return (target->getWidth() + getCurLane()->getWidth()) / 2;
+    }
 
-        void sendSignal() { laneChange->sendSignal(); }
+    void abortLaneChange();
 
-        void clearSignal(){ laneChange->clearSignal(); }
+    void updateRoute();
 
-        void updateLaneChangeNeighbor(){ laneChange->updateLeaderAndFollower(); }
+    Road *getFirstRoad();
 
-        std::shared_ptr<LaneChange> getLaneChange(){ return laneChange; }
+    void setFirstDrivable();
 
-        std::list<Vehicle *>::iterator getListIterator();
+    bool isRouteValid() const {
+        return this->routeValid;
+    }
 
-        void insertShadow(Vehicle *shadow) { laneChange->insertShadow(shadow); }
+    Flow *getFlow() {
+        return flow;
+    }
 
-        bool onValidLane() const{ return controllerInfo.router.onValidLane(); }
+    bool setRoute(const std::vector<Road *> &anchor);
 
-        Lane * getValidLane() const{
-            assert(getCurDrivable()->isLane());
-            return controllerInfo.router.getValidLane(dynamic_cast<Lane *>(getCurDrivable()));
-        }
+    std::map<std::string, std::string> getInfo() const;
+};
 
-        bool canChange() const{ return laneChange->canChange(); }
-
-        double getGap() const{ return controllerInfo.gap; }
-
-        int laneChangeUrgency() const { return laneChange->signalSend->urgency; }
-
-        Vehicle *getTargetLeader() const { return laneChange->targetLeader; }
-
-        int lastLaneChangeDirection() const { return laneChange->lastDir; }
-
-        int getLaneChangeDirection() const {
-            if (!laneChange->signalSend) return 0;
-            return laneChange->signalSend->direction;
-        }
-
-        bool isChanging() const { return laneChange->changing; }
-
-        double getMaxOffset() const {
-            auto target = laneChange->signalSend->target;
-            return (target->getWidth() + getCurLane()->getWidth()) / 2;
-        }
-
-        void abortLaneChange() ;
-
-        void updateRoute();
-
-        Road *getFirstRoad();
-
-        void setFirstDrivable();
-
-        bool isRouteValid() const { return this->routeValid; }
-
-        Flow *getFlow() { return flow; }
-
-        bool setRoute(const std::vector<Road *> &anchor);
-
-        std::map<std::string, std::string> getInfo() const;
-
-     };
-
-}
+} // namespace CityFlow
 
 #endif

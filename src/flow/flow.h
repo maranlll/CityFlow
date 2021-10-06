@@ -3,53 +3,53 @@
 
 #include <iostream>
 
-#include "vehicle/vehicle.h"
 #include "flow/route.h"
+#include "vehicle/vehicle.h"
 
 namespace CityFlow {
-    class Engine;
+class Engine;
 
-    struct VehicleInfo;
+struct VehicleInfo;
 
-    class Flow {
-        friend class Archive;
-    private:
-        VehicleInfo vehicleTemplate;
-        std::shared_ptr<const Route> route;
-        double interval;
-        double nowTime = 0;
-        double currentTime = 0;
-        int startTime = 0;
-        int endTime = -1;
-        int cnt = 0;
-        Engine *engine;
-        std::string id;
-        bool valid = true;
+class Flow {
+    friend class Archive;
 
-    public:
-        Flow(const VehicleInfo &vehicleTemplate, double timeInterval,
-            Engine *engine, int startTime, int endTime, const std::string &id) 
-            : vehicleTemplate(vehicleTemplate), interval(timeInterval),
-              startTime(startTime), endTime(endTime), engine(engine), id(id) {
-            assert(timeInterval >= 1 || (startTime == endTime));
-            nowTime = interval;
-        }
+  private:
+    VehicleInfo vehicleTemplate;
+    std::shared_ptr<const Route> route;
+    double interval;
+    double nowTime = 0;
+    double currentTime = 0;
+    int startTime = 0;
+    int endTime = -1;
+    int cnt = 0;
+    Engine *engine;
+    std::string id;
+    bool valid = true;
 
-        void nextStep(double timeInterval);
+  public:
+    Flow(const VehicleInfo &vehicleTemplate, double timeInterval, Engine *engine, int startTime, int endTime, const std::string &id)
+        : vehicleTemplate(vehicleTemplate), interval(timeInterval), startTime(startTime), endTime(endTime), engine(engine), id(id) {
+        assert(timeInterval >= 1 || (startTime == endTime));
+        nowTime = interval;
+    }
 
-        std::string getId() const;
+    void nextStep(double timeInterval);
 
-        bool isValid() const { return this->valid; }
+    std::string getId() const;
 
-        void setValid(const bool valid) {
-            if (this->valid && !valid)
-                std::cerr << "[warning] Invalid route '" << id << "'. Omitted by default." << std::endl;
-            this->valid = valid;
-        }
+    bool isValid() const {
+        return this->valid;
+    }
 
-        void reset();
+    void setValid(const bool valid) {
+        if (this->valid && !valid)
+            std::cerr << "[warning] Invalid route '" << id << "'. Omitted by default." << std::endl;
+        this->valid = valid;
+    }
 
-    };
-}
+    void reset();
+};
+} // namespace CityFlow
 
-#endif //CITYFLOW_FLOW_H
+#endif // CITYFLOW_FLOW_H

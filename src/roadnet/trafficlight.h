@@ -4,50 +4,53 @@
 #include <vector>
 
 namespace CityFlow {
-    class Intersection;
+class Intersection;
 
-    class RoadLink;
+class RoadLink;
 
-    class RoadNet;
+class RoadNet;
 
-    class TrafficLight;
+class TrafficLight;
 
-    class LightPhase {
-        friend class RoadNet;
-        friend class RoadLink;
-        friend class TrafficLight;
-    private:
-        unsigned int phase = 0;
-        double time = 0.0;
-        std::vector<bool> roadLinkAvailable;
-    };
+class LightPhase {
+    friend class RoadNet;
+    friend class RoadLink;
+    friend class TrafficLight;
 
-    class TrafficLight {
-        friend class RoadNet;
-        friend class Archive;
-    private:
-        Intersection *intersection = nullptr;
-        std::vector<LightPhase> phases;
-        std::vector<int> roadLinkIndices;
-        double remainDuration = 0.0;
-        int curPhaseIndex = 0;
-    public:
-        void init(int initPhaseIndex);
+  private:
+    unsigned int phase = 0;
+    double time = 0.0;
+    std::vector<bool> roadLinkAvailable;
+};
 
-        int getCurrentPhaseIndex();
+class TrafficLight {
+    friend class RoadNet;
+    friend class Archive;
 
-        LightPhase &getCurrentPhase();
+  private:
+    Intersection *intersection = nullptr;
+    std::vector<LightPhase> phases;
+    std::vector<int> roadLinkIndices;
+    double remainDuration = 0.0;
+    int curPhaseIndex = 0;
 
-        Intersection &getIntersection();
+  public:
+    void init(int initPhaseIndex);
 
-        std::vector<LightPhase> &getPhases();
+    int getCurrentPhaseIndex();
 
-        void passTime(double seconds);
+    LightPhase &getCurrentPhase();
 
-        void setPhase(int phaseIndex);
+    Intersection &getIntersection();
 
-        void reset();
-    };
-}
+    std::vector<LightPhase> &getPhases();
 
-#endif //CITYFLOW_TRAFFICLIGHT_H
+    void passTime(double seconds);
+
+    void setPhase(int phaseIndex);
+
+    void reset();
+};
+} // namespace CityFlow
+
+#endif // CITYFLOW_TRAFFICLIGHT_H

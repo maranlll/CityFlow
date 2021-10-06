@@ -1,187 +1,194 @@
 #ifndef CITYFLOW_ENGINE_H
 #define CITYFLOW_ENGINE_H
 
+#include "engine/archive.h"
 #include "flow/flow.h"
 #include "roadnet/roadnet.h"
-#include "engine/archive.h"
 #include "utility/barrier.h"
 
-#include <mutex>
-#include <thread>
-#include <set>
-#include <random>
 #include <fstream>
-
+#include <mutex>
+#include <random>
+#include <set>
+#include <thread>
 
 namespace CityFlow {
 
-    class Engine {
-        friend class Archive;
-    private:
-        static bool vehicleCmp(const std::pair<Vehicle *, double> &a, const std::pair<Vehicle *, double> &b) {
-            return a.second > b.second;
-        }
+class Engine {
+    friend class Archive;
 
-        std::map<int, std::pair<Vehicle *, int>> vehiclePool;
-        std::map<std::string, Vehicle *> vehicleMap;
-        std::vector<std::set<Vehicle *>> threadVehiclePool;
-        std::vector<std::vector<Road *>> threadRoadPool;
-        std::vector<std::vector<Intersection *>> threadIntersectionPool;
-        std::vector<std::vector<Drivable *>> threadDrivablePool;
-        std::vector<Flow> flows;
-        RoadNet roadnet;
-        int threadNum;
-        double interval;
-        bool saveReplay;
-        bool saveReplayInConfig; // saveReplay option in config json
-        bool warnings;
-        std::vector<std::pair<Vehicle *, double>> pushBuffer;
-        std::vector<Vehicle *> laneChangeNotifyBuffer;
-        std::set<Vehicle *> vehicleRemoveBuffer;
-        rapidjson::Document jsonRoot;
-        std::string stepLog;
+  private:
+    static bool vehicleCmp(const std::pair<Vehicle *, double> &a, const std::pair<Vehicle *, double> &b) {
+        return a.second > b.second;
+    }
 
-        size_t step = 0;
-        size_t activeVehicleCount = 0;
-        int seed;
-        std::mutex lock;
-        Barrier startBarrier, endBarrier;
-        std::vector<std::thread> threadPool;
-        bool finished = false;
-        std::string dir;
-        std::ofstream logOut;
+    std::map<int, std::pair<Vehicle *, int>> vehiclePool;
+    std::map<std::string, Vehicle *> vehicleMap;
+    std::vector<std::set<Vehicle *>> threadVehiclePool;
+    std::vector<std::vector<Road *>> threadRoadPool;
+    std::vector<std::vector<Intersection *>> threadIntersectionPool;
+    std::vector<std::vector<Drivable *>> threadDrivablePool;
+    std::vector<Flow> flows;
+    RoadNet roadnet;
+    int threadNum;
+    double interval;
+    bool saveReplay;
+    bool saveReplayInConfig; // saveReplay option in config json
+    bool warnings;
+    std::vector<std::pair<Vehicle *, double>> pushBuffer;
+    std::vector<Vehicle *> laneChangeNotifyBuffer;
+    std::set<Vehicle *> vehicleRemoveBuffer;
+    rapidjson::Document jsonRoot;
+    std::string stepLog;
 
-        bool rlTrafficLight;
-        bool laneChange;
-        int manuallyPushCnt = 0;
+    size_t step = 0;
+    size_t activeVehicleCount = 0;
+    int seed;
+    std::mutex lock;
+    Barrier startBarrier, endBarrier;
+    std::vector<std::thread> threadPool;
+    bool finished = false;
+    std::string dir;
+    std::ofstream logOut;
 
-        int finishedVehicleCnt = 0;
-        double cumulativeTravelTime = 0;
+    bool rlTrafficLight;
+    bool laneChange;
+    int manuallyPushCnt = 0;
 
-    private:
-        void vehicleControl(Vehicle &vehicle, std::vector<std::pair<Vehicle *, double>> &buffer);
+    int finishedVehicleCnt = 0;
+    double cumulativeTravelTime = 0;
 
-        void planRoute();
+  private:
+    void vehicleControl(Vehicle &vehicle, std::vector<std::pair<Vehicle *, double>> &buffer);
 
-        void getAction();
+    void planRoute();
 
-        void updateAction();
+    void getAction();
 
-        void updateLocation();
+    void updateAction();
 
-        void updateLeaderAndGap();
+    void updateLocation();
 
-        void planLaneChange();
+    void updateLeaderAndGap();
 
+    void planLaneChange();
 
-        void threadController(std::set<Vehicle *> &vehicles, 
-                              std::vector<Road *> &roads,
-                              std::vector<Intersection *> &intersections,
-                              std::vector<Drivable *> &drivables);
+    void threadController(std::set<Vehicle *> &vehicles, std::vector<Road *> &roads, std::vector<Intersection *> &intersections,
+                          std::vector<Drivable *> &drivables);
 
-        void threadPlanRoute(const std::vector<Road *> &roads);
+    void threadPlanRoute(const std::vector<Road *> &roads);
 
-        void threadGetAction(std::set<Vehicle *> &vehicles);
+    void threadGetAction(std::set<Vehicle *> &vehicles);
 
-        void threadUpdateAction(std::set<Vehicle *> &vehicles);
+    void threadUpdateAction(std::set<Vehicle *> &vehicles);
 
-        void threadUpdateLeaderAndGap(const std::vector<Drivable *> &drivables);
+    void threadUpdateLeaderAndGap(const std::vector<Drivable *> &drivables);
 
-        void threadUpdateLocation(const std::vector<Drivable *> &drivables);
+    void threadUpdateLocation(const std::vector<Drivable *> &drivables);
 
-        void threadNotifyCross(const std::vector<Intersection *> &intersections);
+    void threadNotifyCross(const std::vector<Intersection *> &intersections);
 
-        void threadInitSegments(const std::vector<Road *> &roads);
+    void threadInitSegments(const std::vector<Road *> &roads);
 
-        void threadPlanLaneChange(const std::set<Vehicle *> &vehicles);
+    void threadPlanLaneChange(const std::set<Vehicle *> &vehicles);
 
-        void handleWaiting();
+    void handleWaiting();
 
-        void updateLog();
+    void updateLog();
 
-        bool checkWarning();
+    bool checkWarning();
 
-        bool loadRoadNet(const std::string &jsonFile);
+    bool loadRoadNet(const std::string &jsonFile);
 
-        bool loadFlow(const std::string &jsonFilename);
+    bool loadFlow(const std::string &jsonFilename);
 
-        std::vector<const Vehicle *> getRunningVehicles(bool includeWaiting=false) const;
+    std::vector<const Vehicle *> getRunningVehicles(bool includeWaiting = false) const;
 
-        void scheduleLaneChange();
+    void scheduleLaneChange();
 
-        void insertShadow(Vehicle *vehicle);
+    void insertShadow(Vehicle *vehicle);
 
-    public:
-        std::mt19937 rnd;
+  public:
+    std::mt19937 rnd;
 
-        Engine(const std::string &configFile, int threadNum);
+    Engine(const std::string &configFile, int threadNum);
 
-        double getInterval() const { return interval; }
+    double getInterval() const {
+        return interval;
+    }
 
-        bool hasLaneChange() const { return laneChange; }
+    bool hasLaneChange() const {
+        return laneChange;
+    }
 
-        bool loadConfig(const std::string &configFile);
+    bool loadConfig(const std::string &configFile);
 
-        void notifyCross();
+    void notifyCross();
 
-        void nextStep();
+    void nextStep();
 
-        bool checkPriority(int priority);
+    bool checkPriority(int priority);
 
-        void pushVehicle(Vehicle *const vehicle, bool pushToDrivable = true);
+    void pushVehicle(Vehicle *const vehicle, bool pushToDrivable = true);
 
-        void setLogFile(const std::string &jsonFile, const std::string &logFile);
+    void setLogFile(const std::string &jsonFile, const std::string &logFile);
 
-        void initSegments();
+    void initSegments();
 
-        ~Engine();
+    ~Engine();
 
-        // RL related api
+    // RL related api
 
-        void pushVehicle(const std::map<std::string, double> &info, const std::vector<std::string> &roads);
+    void pushVehicle(const std::map<std::string, double> &info, const std::vector<std::string> &roads);
 
-        size_t getVehicleCount() const;
+    size_t getVehicleCount() const;
 
-        std::vector<std::string> getVehicles(bool includeWaiting = false) const;
+    std::vector<std::string> getVehicles(bool includeWaiting = false) const;
 
-        std::map<std::string, int> getLaneVehicleCount() const;
+    std::map<std::string, int> getLaneVehicleCount() const;
 
-        std::map<std::string, int> getLaneWaitingVehicleCount() const;
+    std::map<std::string, int> getLaneWaitingVehicleCount() const;
 
-        std::map<std::string, std::vector<std::string>> getLaneVehicles();
+    std::map<std::string, std::vector<std::string>> getLaneVehicles();
 
-        std::map<std::string, double> getVehicleSpeed() const;
+    std::map<std::string, double> getVehicleSpeed() const;
 
-        std::map<std::string, double> getVehicleDistance() const;
+    std::map<std::string, double> getVehicleDistance() const;
 
-        std::string getLeader(const std::string &vehicleId) const;
+    std::string getLeader(const std::string &vehicleId) const;
 
-        double getCurrentTime() const;
+    double getCurrentTime() const;
 
-        double getAverageTravelTime() const;
+    double getAverageTravelTime() const;
 
-        void setTrafficLightPhase(const std::string &id, int phaseIndex);
+    void setTrafficLightPhase(const std::string &id, int phaseIndex);
 
-        void setReplayLogFile(const std::string &logFile);
+    void setReplayLogFile(const std::string &logFile);
 
-        void setSaveReplay(bool open);
+    void setSaveReplay(bool open);
 
-        void setVehicleSpeed(const std::string &id, double speed);
+    void setVehicleSpeed(const std::string &id, double speed);
 
-        void setRandomSeed(int seed) { rnd.seed(seed); }
-        
-        void reset(bool resetRnd = false);
+    void setRandomSeed(int seed) {
+        rnd.seed(seed);
+    }
 
-        // archive
-        void load(const Archive &archive) { archive.resume(*this); }
-        Archive snapshot() { return Archive(*this); }
-        void loadFromFile(const char *fileName);
+    void reset(bool resetRnd = false);
 
-        bool setRoute(const std::string &vehicle_id, const std::vector<std::string> &anchor_id);
+    // archive
+    void load(const Archive &archive) {
+        archive.resume(*this);
+    }
+    Archive snapshot() {
+        return Archive(*this);
+    }
+    void loadFromFile(const char *fileName);
 
-        std::map<std::string, std::string> getVehicleInfo(const std::string &id) const;
-    };
+    bool setRoute(const std::string &vehicle_id, const std::vector<std::string> &anchor_id);
 
-}
+    std::map<std::string, std::string> getVehicleInfo(const std::string &id) const;
+};
 
-#endif //CITYFLOW_ENGINE_H
+} // namespace CityFlow
+
+#endif // CITYFLOW_ENGINE_H
