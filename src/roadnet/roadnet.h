@@ -9,24 +9,26 @@
 #include <map>
 #include <queue>
 
-
 namespace CityFlow {
 class RoadNet;
-
 class Intersection;
-
 class Road;
-
 class Lane;
-
 class LaneLink;
-
 class Vehicle;
-
 class Cross;
 
+// 存储于 lane，含 index(size_t)
 class Segment {
     friend Lane;
+
+  private:
+    size_t index = 0;
+    Lane *belongLane = nullptr;
+    double startPos = 0;
+    double endPos = 0;
+    std::list<std::list<Vehicle *>::iterator> vehicles; // 指向 Lane 的父类 Dirvable 的 vehicles 中的一段
+    std::list<Vehicle *>::iterator prev_vehicle_iter;
 
   public:
     // Vehicle * tryChange = nullptr;
@@ -63,34 +65,24 @@ class Segment {
     void removeVehicle(Vehicle *vehicle);
 
     void insertVehicle(std::list<Vehicle *>::iterator &vehicle);
-
-  private:
-    size_t index = 0;
-    Lane *belongLane = nullptr;
-    double startPos = 0;
-    double endPos = 0;
-    std::list<std::list<Vehicle *>::iterator> vehicles;
-    std::list<Vehicle *>::iterator prev_vehicle_iter;
 };
 
+// 路口，含 roads，id(string)
 class Intersection {
     friend class RoadNet;
-
     friend class RoadLink;
-
     friend class Road;
-
     friend class TrafficLight;
 
   private:
     std::string id;
-    bool isVirtual;
+    bool isVirtual; // ??
     double width = 0.0;
-    Point point;
+    Point point; // position?
     TrafficLight trafficLight;
     std::vector<Road *> roads;
     std::vector<RoadLink> roadLinks;
-    std::vector<Cross> crosses;
+    std::vector<Cross> crosses; // laneLink 产生的交叉点集
     std::vector<LaneLink *> laneLinks;
 
     void initCrosses();
@@ -145,18 +137,18 @@ class Intersection {
     }
 };
 
+// Cross 由 laneLink 产生，存储于 Intersection, laneLink可获取与之相关的 cross
 class Cross {
     friend class RoadNet;
-
     friend class Intersection;
 
   private:
-    LaneLink *laneLinks[2];
-    Vehicle *notifyVehicles[2];
+    LaneLink *laneLinks[2];     // 两条穿过路口的交叉路形成 cross
+    Vehicle *notifyVehicles[2]; // 每个 cross 中可能相撞的车
     double notifyDistances[2];
-    double distanceOnLane[2];
+    double distanceOnLane[2];                      // 交叉点距离 lane 起点的距离
     double leaveDistance = 0, arriveDistance = 30; // TODO
-    double ang;
+    double ang;                                    // 夹角的弧度
     double safeDistances[2];
 
   public:
@@ -168,7 +160,7 @@ class Cross {
         return arriveDistance;
     }
 
-    void notify(LaneLink *laneLink, Vehicle *vehicle, double notifyDistance);
+    void notify(LaneLink *laneLink, Vehicle *vehicle, double notifyDistance); // notify all the crosspoint of its arrival
 
     bool canPass(const Vehicle *vehicle, const LaneLink *laneLink,
                  double distanceToLaneLinkStart) const; // XXX: change to LaneLink based?
@@ -210,9 +202,9 @@ class Cross {
     void reset();
 };
 
+// 存储于 Intersection, 含有 lanes, id(string)
 class Road {
     friend class RoadNet;
-
     friend class Lane;
 
   private:
@@ -220,10 +212,8 @@ class Road {
     Intersection *startIntersection = nullptr;
     Intersection *endIntersection = nullptr;
     std::vector<Lane> lanes;
-    std::vector<Point> points;
-
     std::vector<Lane *> lanePointers;
-
+    std::vector<Point> points; // 连续的 points 记录 road 走向
     std::vector<Vehicle *> planRouteBuffer;
 
     void initLanesPoints();
@@ -251,7 +241,7 @@ class Road {
 
     const std::vector<Lane *> &getLanePointers();
 
-    void buildSegmentationByInterval(double interval);
+    void buildSegmentationByInterval(double interval); // 建立 Segment
 
     bool connectedToRoad(const Road *road) const;
 
@@ -280,6 +270,7 @@ class Road {
     }
 };
 
+// 穿过 intersection 的 lane 的记录基类？
 class Drivable {
     friend class RoadNet;
     friend class Archive;
@@ -291,8 +282,8 @@ class Drivable {
     double length;
     double width;
     double maxSpeed;
-    std::list<Vehicle *> vehicles;
-    std::vector<Point> points;
+    std::list<Vehicle *> vehicles; // 在此通行的车
+    std::vector<Point> points;     // 连续的 points 记录走向
     DrivableType drivableType;
 
   public:
@@ -361,8 +352,8 @@ class Drivable {
     virtual std::string getId() const = 0;
 };
 
+// 以对象和指针形式存储于 Road, 含 laneIndex(int), LandLinks
 class Lane : public Drivable {
-
     friend class RoadNet;
     friend class Road;
     friend class Archive;
@@ -371,10 +362,10 @@ class Lane : public Drivable {
     int laneIndex;
     std::vector<Segment> segments;
     std::vector<LaneLink *> laneLinks;
-    Road *belongRoad = nullptr;
+    Road *belongRoad = nullptr; // 所属
     std::deque<Vehicle *> waitingBuffer;
 
-    struct HistoryRecord {
+    struct HistoryRecord { //?
         int vehicleNum;
         double averageSpeed;
         HistoryRecord(int vehicleNum, double averageSpeed) : vehicleNum(vehicleNum), averageSpeed(averageSpeed) {}
@@ -399,7 +390,7 @@ class Lane : public Drivable {
         return this->belongRoad;
     }
 
-    bool available(const Vehicle *vehicle) const;
+    bool available(const Vehicle *vehicle) const; // 车是否可以从此 Lane 走?
 
     bool canEnter(const Vehicle *vehicle) const;
 
@@ -490,9 +481,9 @@ class Lane : public Drivable {
 
 enum RoadLinkType { go_straight = 3, turn_left = 2, turn_right = 1 };
 
+// Intersection 中 Road 的走法
 class RoadLink {
     friend class RoadNet;
-
     friend class LaneLink;
 
   private:
@@ -534,14 +525,13 @@ class RoadLink {
     void reset();
 };
 
+// Intersection 中 lane 的走法，由 Roadlink 管理
 class LaneLink : public Drivable {
-
     friend class RoadNet;
-
     friend class Intersection;
 
   private:
-    RoadLink *roadLink = nullptr;
+    RoadLink *roadLink = nullptr; //所属的 roadlink
     Lane *startLane = nullptr;
     Lane *endLane = nullptr;
     std::vector<Cross *> crosses;
@@ -592,13 +582,14 @@ class LaneLink : public Drivable {
     }
 };
 
+//
 class RoadNet {
   private:
     std::vector<Road> roads;
     std::vector<Intersection> intersections;
-    std::map<std::string, Road *> roadMap;
-    std::map<std::string, Intersection *> interMap;
-    std::map<std::string, Drivable *> drivableMap;
+    std::map<std::string, Road *> roadMap;          // id to Road*
+    std::map<std::string, Intersection *> interMap; // id to Intersection*
+    std::map<std::string, Drivable *> drivableMap;  // getId() to Drivable*
 
     std::vector<Lane *> lanes;
     std::vector<LaneLink *> laneLinks;

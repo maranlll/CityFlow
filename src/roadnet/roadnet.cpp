@@ -12,9 +12,14 @@ using std::map;
 using std::string;
 
 namespace CityFlow {
-static double getLengthOfPoints(const std::vector<Point> &points);
+static double getLengthOfPoints(const std::vector<Point> &points) { // points 组成的路径的长度
+    double length = 0.0;
+    for (size_t i = 0; i + 1 < points.size(); i++)
+        length += (points[i + 1] - points[i]).len();
+    return length;
+}
 
-static Point getPointByDistance(const std::vector<Point> &points, double dis) {
+static Point getPointByDistance(const std::vector<Point> &points, double dis) { // 找到沿 points 路径距离起点 dis 长度的 point
     dis = min2double(max2double(dis, 0), getLengthOfPoints(points));
     if (dis <= 0.0)
         return points[0];
@@ -28,18 +33,11 @@ static Point getPointByDistance(const std::vector<Point> &points, double dis) {
     return points.back();
 }
 
-static double getLengthOfPoints(const std::vector<Point> &points) {
-    double length = 0.0;
-    for (size_t i = 0; i + 1 < points.size(); i++)
-        length += (points[i + 1] - points[i]).len();
-    return length;
-}
-
-Point RoadNet::getPoint(const Point &p1, const Point &p2, double a) {
+Point RoadNet::getPoint(const Point &p1, const Point &p2, double a) { // 线段 p1, p2 上 a占比的点
     return Point((p2.x - p1.x) * a + p1.x, (p2.y - p1.y) * a + p1.y);
 }
 
-bool RoadNet::loadFromJson(std::string jsonFileName) {
+bool RoadNet::loadFromJson(std::string jsonFileName) { // 从 json 读入
     rapidjson::Document document;
     if (!readJsonFromFile(jsonFileName, document)) {
         std::cerr << "cannot open roadnet file" << std::endl;
@@ -57,18 +55,17 @@ bool RoadNet::loadFromJson(std::string jsonFileName) {
         roads.resize(roadValues.Size());
         intersections.resize(interValues.Size());
         for (rapidjson::SizeType i = 0; i < roadValues.Size(); i++) {
-            path.emplace_back("road[" + std::to_string(i) + "]");
+            path.emplace_back("road[" + std::to_string(i) + "]"); //？
             std::string id = getJsonMember<const char *>("id", roadValues[i]);
             roadMap[id] = &roads[i];
             roads[i].id = id;
-            path.pop_back();
+            path.pop_back(); //?
         }
         assert(path.empty());
 
         for (rapidjson::SizeType i = 0; i < interValues.Size(); i++) {
             path.emplace_back("intersection[" + std::to_string(i) + "]");
             std::string id = getJsonMember<const char *>("id", interValues[i]);
-            ;
             interMap[id] = &intersections[i];
             intersections[i].id = id;
             path.pop_back();
@@ -170,10 +167,11 @@ bool RoadNet::loadFromJson(std::string jsonFileName) {
             //  read width
             intersections[i].width = getJsonMember<double>("width", curInterValue);
 
-            //  read laneLinks
+            //  read RoadLinks and laneLinks
             const auto &roadLinksValue = getJsonMemberArray("roadLinks", curInterValue);
             intersections[i].roadLinks.resize(roadLinksValue.Size());
             int roadLinkIndex = 0;
+            // RoadLinks
             for (const auto &roadLinkValue : roadLinksValue.GetArray()) {
                 path.emplace_back("roadLinks[" + std::to_string(roadLinkIndex) + "]");
                 if (!roadLinkValue.IsObject())
@@ -187,6 +185,7 @@ bool RoadNet::loadFromJson(std::string jsonFileName) {
                 const auto &laneLinksValue = getJsonMemberArray("laneLinks", roadLinkValue);
                 roadLink.laneLinks.resize(laneLinksValue.Size());
                 int laneLinkIndex = 0;
+                // LaneLinks
                 for (const auto &laneLinkValue : laneLinksValue.GetArray()) {
                     path.emplace_back("laneLinks[" + std::to_string(laneLinkIndex) + "]");
                     if (!laneLinkValue.IsObject())
@@ -319,7 +318,7 @@ bool RoadNet::loadFromJson(std::string jsonFileName) {
     return true;
 }
 
-rapidjson::Value RoadNet::convertToJson(rapidjson::Document::AllocatorType &allocator) {
+rapidjson::Value RoadNet::convertToJson(rapidjson::Document::AllocatorType &allocator) { // 写入 json
     rapidjson::Value jsonRoot(rapidjson::kObjectType);
     // write nodes
     rapidjson::Value jsonNodes(rapidjson::kArrayType);
@@ -388,11 +387,11 @@ rapidjson::Value RoadNet::convertToJson(rapidjson::Document::AllocatorType &allo
     return jsonRoot;
 }
 
-Point Drivable::getPointByDistance(double dis) const {
+Point Drivable::getPointByDistance(double dis) const { // points 组成的路径的长度
     return CityFlow::getPointByDistance(points, dis);
 }
 
-Point Drivable::getDirectionByDistance(double dis) const {
+Point Drivable::getDirectionByDistance(double dis) const { // 沿 points 路径距离起点 dis 长度的路径段的单位方向向量
     double remain = dis;
     for (int i = 0; i + 1 < (int)points.size(); i++) {
         double len = (points[i + 1] - points[i]).len();
@@ -420,7 +419,7 @@ Lane::Lane(double width, double maxSpeed, int laneIndex, Road *belongRoad) {
     drivableType = LANE;
 }
 
-bool Lane::available(const Vehicle *vehicle) const {
+bool Lane::available(const Vehicle *vehicle) const { // ?
     if (!vehicles.empty()) {
         Vehicle *tail = vehicles.back();
         return tail->getDistance() > tail->getLen() + vehicle->getMinGap();
@@ -429,7 +428,7 @@ bool Lane::available(const Vehicle *vehicle) const {
     }
 }
 
-bool Lane::canEnter(const Vehicle *vehicle) const {
+bool Lane::canEnter(const Vehicle *vehicle) const { // ?
     if (!vehicles.empty()) {
         Vehicle *tail = vehicles.back();
         return tail->getDistance() > tail->getLen() + vehicle->getLen() || tail->getSpeed() >= 2; // todo: speed > 2 or?
@@ -438,8 +437,7 @@ bool Lane::canEnter(const Vehicle *vehicle) const {
     }
 }
 
-std::vector<LaneLink *> Lane::getLaneLinksToRoad(const Road *road) const {
-    std::vector<LaneLink *> ret;
+std::vector<LaneLink *> Lane::getLaneLinksToRoad(const Road *road) const { //获取去向参数 road 的 LaneLink
     for (auto &laneLink : laneLinks) {
         if (laneLink->getEndLane()->getBelongRoad() == road)
             ret.push_back(laneLink);
@@ -447,7 +445,7 @@ std::vector<LaneLink *> Lane::getLaneLinksToRoad(const Road *road) const {
     return ret;
 }
 
-void Road::initLanesPoints() {
+void Road::initLanesPoints() { // 计算 lane 的 point
     double dsum = 0.0;
     std::vector<Point> roadPoints = this->points;
 
@@ -507,7 +505,7 @@ const std::vector<Lane *> &Road::getLanePointers() {
     return lanePointers;
 }
 
-void Intersection::initCrosses() {
+void Intersection::initCrosses() { // 初始化每个 laneLink 的 cross
     std::vector<LaneLink *> allLaneLinks;
     for (auto &roadLink : roadLinks) {
         for (auto &laneLink : roadLink.getLaneLinks())
@@ -544,7 +542,7 @@ void Intersection::initCrosses() {
                         double w2 = lb->getWidth();
                         double c1 = w1 / sin(cross.ang);
                         double c2 = w2 / sin(cross.ang);
-                        double diag = (c1 * c1 + c2 * c2 + 2 * c1 * c2 * cos(cross.ang)) / 4;
+                        double diag = (c1 * c1 + c2 * c2 + 2 * c1 * c2 * cos(cross.ang)) / 4; //?
                         cross.safeDistances[0] = sqrt(diag - w2 * w2 / 4);
                         cross.safeDistances[1] = sqrt(diag - w1 * w1 / 4);
                         this->crosses.push_back(cross);
@@ -590,7 +588,7 @@ const std::vector<LaneLink *> &RoadLink::getLaneLinkPointers() {
     return laneLinkPointers;
 }
 
-void Cross::notify(LaneLink *laneLink, Vehicle *vehicle, double notifyDistance) {
+void Cross::notify(LaneLink *laneLink, Vehicle *vehicle, double notifyDistance) { // 填入 notifyVehicle 和 notifyDistance
     assert(laneLink == laneLinks[0] || laneLink == laneLinks[1]);
     int i = (laneLink == laneLinks[0]) ? 0 : 1;
     assert(notifyVehicles[i] == nullptr);
@@ -703,7 +701,7 @@ double Road::getWidth() const {
     return width;
 }
 
-double Road::getLength() const {
+double Road::getLength() const { // ?
     double length = 0;
     for (const auto &lane : getLanes()) {
         length += lane.getLength();
@@ -756,7 +754,7 @@ void Intersection::reset() {
         cross.reset();
 }
 
-std::vector<Point> Intersection::getOutline() {
+std::vector<Point> Intersection::getOutline() { // ?
     // Calculate the convex hull as the outline of the intersection
     std::vector<Point> points;
     points.push_back(getPosition());
@@ -780,7 +778,7 @@ std::vector<Point> Intersection::getOutline() {
         double deltaWidth = 0.5 * min2double(width, roadWidth);
         deltaWidth = max2double(deltaWidth, 5);
 
-        Point pointA = getPosition() - roadDirect * width;
+        Point pointA = getPosition() - roadDirect * width; // ?
         Point pointB = pointA - pDirect * roadWidth;
         points.push_back(pointA);
         points.push_back(pointB);

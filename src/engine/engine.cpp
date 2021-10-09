@@ -21,7 +21,6 @@ Engine::Engine(const std::string &configFile, int threadNum) : threadNum(threadN
     if (!success) {
         std::cerr << "load config failed!" << std::endl;
     }
-
     for (int i = 0; i < threadNum; i++) {
         threadPool.emplace_back(&Engine::threadController, this, std::ref(threadVehiclePool[i]), std::ref(threadRoadPool[i]),
                                 std::ref(threadIntersectionPool[i]), std::ref(threadDrivablePool[i]));
