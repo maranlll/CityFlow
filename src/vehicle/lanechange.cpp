@@ -27,10 +27,10 @@ bool LaneChange::planChange() const {
 void LaneChange::updateLeaderAndFollower() {
     targetLeader = targetFollower = nullptr;
     Lane *target = signalSend->target;
-    targetLeader = target->getVehicleAfterDistance(vehicle->getDistance(), vehicle->getSegmentIndex());
+    targetLeader = target->getVehicleAfterDistance(vehicle->getDistance(), vehicle->getSegmentIndex()); // 换行后前面的车
     Lane *curLane = dynamic_cast<Lane *>(vehicle->getCurDrivable());
     leaderGap = followerGap = std::numeric_limits<double>::max();
-    if (!targetLeader) {
+    if (!targetLeader) { // ?
         // Find target leader in following lanelinks
         double rest = curLane->getLength() - vehicle->getDistance();
         leaderGap = rest;
@@ -59,11 +59,11 @@ void LaneChange::updateLeaderAndFollower() {
         followerGap = std::numeric_limits<double>::max();
 }
 
-double LaneChange::gapBefore() const {
+double LaneChange::gapBefore() const { //?
     return followerGap;
 }
 
-double LaneChange::gapAfter() const {
+double LaneChange::gapAfter() const { // ?
     return leaderGap;
 }
 

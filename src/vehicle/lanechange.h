@@ -17,9 +17,9 @@ class LaneChange {
   protected:
     struct Signal {
         int urgency;
-        int direction; // -1 for left , 1 for right, 0 for unchanged
-        Lane *target;
-        Vehicle *source;
+        int direction;   // -1 for left , 1 for right, 0 for unchanged
+        Lane *target;    // signal 去向的 lane
+        Vehicle *source; // signal 来源
         int response = 0;
         double extraSpace = 0;
     };

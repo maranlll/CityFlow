@@ -5,11 +5,8 @@
 
 namespace CityFlow {
 class Intersection;
-
 class RoadLink;
-
 class RoadNet;
-
 class TrafficLight;
 
 class LightPhase {
@@ -19,7 +16,7 @@ class LightPhase {
 
   private:
     unsigned int phase = 0;
-    double time = 0.0;
+    double time = 0.0; // 持续时间
     std::vector<bool> roadLinkAvailable;
 };
 

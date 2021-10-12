@@ -45,7 +45,7 @@ Drivable *Router::getNextDrivable(size_t i) const {
     }
 }
 
-Drivable *Router::getNextDrivable(const Drivable *curDrivable) const {
+Drivable *Router::getNextDrivable(const Drivable *curDrivable) const { // 走向下一个 road 的 dirvable 走法
     if (curDrivable->isLaneLink()) {
         return static_cast<const LaneLink *>(curDrivable)->getEndLane();
     } else {
@@ -137,7 +137,7 @@ bool Router::onLastRoad() const {
     return isLastRoad(vehicle->getCurDrivable());
 }
 
-Lane *Router::getValidLane(const Lane *curLane) const {
+Lane *Router::getValidLane(const Lane *curLane) const { // 可选的 lanechange
     if (isLastRoad(curLane))
         return nullptr;
     auto nextRoad = iCurRoad;

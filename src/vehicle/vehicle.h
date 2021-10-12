@@ -42,7 +42,7 @@ class Vehicle {
     friend class Archive;
 
   private:
-    struct Buffer {
+    struct Buffer { // 待更新到 controllerInfo 等的车辆信息缓存
         bool isDisSet = false;
         bool isSpeedSet = false;
         bool isDrivableSet = false;
@@ -51,25 +51,26 @@ class Vehicle {
         bool isEnterLaneLinkTimeSet = false;
         bool isBlockerSet = false;
         bool isCustomSpeedSet = false;
+
         double dis;
-        double deltaDis;
         double speed;
-        double customSpeed;
         Drivable *drivable;
         std::vector<Vehicle *> notifiedVehicles;
         bool end;
-        Vehicle *blocker = nullptr;
         size_t enterLaneLinkTime;
+        Vehicle *blocker = nullptr;
+        double customSpeed;
+        double deltaDis;
     };
 
-    struct LaneChangeInfo {
+    struct LaneChangeInfo {    // 换路控制
         short partnerType = 0; // 0 for no partner; 1 for real vehicle; 2 for shadow vehicle;
         Vehicle *partner = nullptr;
         double offset = 0;
         size_t segmentIndex = 0;
     };
 
-    struct ControllerInfo {
+    struct ControllerInfo { // 车辆行驶信息？
         double dis = 0;
         Drivable *drivable = nullptr;
         Drivable *prevDrivable = nullptr;
@@ -86,10 +87,9 @@ class Vehicle {
     };
 
     VehicleInfo vehicleInfo;
-    ControllerInfo controllerInfo;
-    LaneChangeInfo laneChangeInfo;
-
     Buffer buffer;
+    LaneChangeInfo laneChangeInfo;
+    ControllerInfo controllerInfo;
 
     int priority;
     std::string id;

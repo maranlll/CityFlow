@@ -73,7 +73,7 @@ Drivable *Vehicle::getChangedDrivable() const {
     return buffer.drivable;
 }
 
-Point Vehicle::getPoint() const {
+Point Vehicle::getPoint() const { // ?
     if (fabs(laneChangeInfo.offset) < eps || !controllerInfo.drivable->isLane()) {
         return controllerInfo.drivable->getPointByDistance(controllerInfo.dis);
     } else {
@@ -136,7 +136,7 @@ void Vehicle::update() { // TODO: use something like reflection?
 }
 
 std::pair<Point, Point> Vehicle::getCurPos() const {
-    std::pair<Point, Point> ret;
+    std::pair<Point, Point> ret; // 头尾坐标
     ret.first = controllerInfo.drivable->getPointByDistance(controllerInfo.dis);
     Point direction = controllerInfo.drivable->getDirectionByDistance(controllerInfo.dis);
     Point tail(ret.first);
@@ -180,7 +180,8 @@ void Vehicle::updateLeaderAndGap(Vehicle *leader) {
             }
 
             dis += drivable->getLength();
-            if (dis > vehicleInfo.maxSpeed * vehicleInfo.maxSpeed / vehicleInfo.usualNegAcc / 2 + vehicleInfo.maxSpeed * engine->getInterval() * 2)
+            if (dis >
+                vehicleInfo.maxSpeed * vehicleInfo.maxSpeed / vehicleInfo.usualNegAcc / 2 + vehicleInfo.maxSpeed * engine->getInterval() * 2) // ?
                 return;
         }
         return;
@@ -272,7 +273,7 @@ bool Vehicle::canYield(double dist) const {
     return (dist > 0 && getMinBrakeDistance() < dist - vehicleInfo.yieldDistance) || (dist < 0 && dist + vehicleInfo.len < 0);
 }
 
-bool Vehicle::isIntersectionRelated() {
+bool Vehicle::isIntersectionRelated() { // ?
     if (controllerInfo.drivable->isLaneLink())
         return true;
     if (controllerInfo.drivable->isLane()) {
@@ -414,7 +415,7 @@ bool Vehicle::setRoute(const std::vector<Road *> &anchor) {
 }
 
 std::map<std::string, std::string> Vehicle::getInfo() const {
-    std::map<std::string, std::string> info;
+    git std::map<std::string, std::string> info;
     info["running"] = std::to_string(isRunning());
     if (!isRunning())
         return info;

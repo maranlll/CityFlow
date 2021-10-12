@@ -19,13 +19,13 @@ class Router {
     friend Archive;
 
   private:
-    Vehicle *vehicle = nullptr;
-    std::vector<Road *> route;
-    std::vector<Road *> anchorPoints;
-    std::vector<Road *>::const_iterator iCurRoad;
-    std::mt19937 *rnd = nullptr;
+    Vehicle *vehicle = nullptr;                   // router 对应的车辆
+    std::vector<Road *> route;                    // 到达各 anchorpoint 的具体走法
+    std::vector<Road *> anchorPoints;             // 必须要到达的点
+    std::vector<Road *>::const_iterator iCurRoad; // 当前所在的 route 的位置
+    std::mt19937 *rnd = nullptr;                  // 随机数
 
-    mutable std::deque<Drivable *> planned;
+    mutable std::deque<Drivable *> planned; // 当前走过的路径缓存？
 
     int selectLaneIndex(const Lane *curLane, const std::vector<Lane *> &lanes) const;
 
