@@ -22,41 +22,41 @@ class Engine {
         return a.second > b.second;
     }
 
-    std::map<int, std::pair<Vehicle *, int>> vehiclePool;
-    std::map<std::string, Vehicle *> vehicleMap;
-    std::vector<std::set<Vehicle *>> threadVehiclePool;
-    std::vector<std::vector<Road *>> threadRoadPool;
-    std::vector<std::vector<Intersection *>> threadIntersectionPool;
-    std::vector<std::vector<Drivable *>> threadDrivablePool;
-    std::vector<Flow> flows;
-    RoadNet roadnet;
-    int threadNum;
-    double interval;
-    bool saveReplay;
-    bool saveReplayInConfig; // saveReplay option in config json
-    bool warnings;
-    std::vector<std::pair<Vehicle *, double>> pushBuffer;
-    std::vector<Vehicle *> laneChangeNotifyBuffer;
-    std::set<Vehicle *> vehicleRemoveBuffer;
+    std::map<int, std::pair<Vehicle *, int>> vehiclePool;            // map<priority, pair<Vehicle *, threadBelongedTo>>
+    std::map<std::string, Vehicle *> vehicleMap;                     // map<id, Vehicle *>  id: "flow_x_x"
+    std::vector<std::set<Vehicle *>> threadVehiclePool;              // Vehicle 线程池
+    std::vector<std::vector<Road *>> threadRoadPool;                 // Road 线程池
+    std::vector<std::vector<Intersection *>> threadIntersectionPool; // Interserction 线程池
+    std::vector<std::vector<Drivable *>> threadDrivablePool;         // Drivable 线程池
+    std::vector<Flow> flows;                                         // 待进入 RoadNet 的车辆流信息
+    RoadNet roadnet;                                                 // 路网
+    int threadNum;                                                   // 线程数
+    double interval;                                                 // step 时间间隔
+    bool saveReplay;                                                 // 是否记录
+    bool saveReplayInConfig;                                         // saveReplay option in config json
+    bool warnings;                                                   // 是否开 waring
+    std::vector<std::pair<Vehicle *, double>> pushBuffer;            // vector<pair<Vehicle *, deltadis>> 缓存 drivable 发生变化的车辆
+    std::vector<Vehicle *> laneChangeNotifyBuffer;                   // 待 laneChange 的车辆
+    std::set<Vehicle *> vehicleRemoveBuffer;                         // 到达 end 的车辆
     rapidjson::Document jsonRoot;
     std::string stepLog;
 
-    size_t step = 0;
-    size_t activeVehicleCount = 0;
-    int seed;
-    std::mutex lock;
-    Barrier startBarrier, endBarrier;
-    std::vector<std::thread> threadPool;
-    bool finished = false;
-    std::string dir;
+    size_t step = 0;                     // next_step 执行步数
+    size_t activeVehicleCount = 0;       // 运行中车辆数
+    int seed;                            // 随机数种子
+    std::mutex lock;                     // 互斥锁
+    Barrier startBarrier, endBarrier;    // 线程 start 与 end 控制对象
+    std::vector<std::thread> threadPool; // 主程序线程池
+    bool finished = false;               // 是否程序执行结束
+    std::string dir;                     // 文件夹路径
     std::ofstream logOut;
 
-    bool rlTrafficLight;
-    bool laneChange;
+    bool rlTrafficLight; // 是否使用强化学习控制 TrafficLight，如非则使用固定 TrafficLight phase
+    bool laneChange;     // 是否允许变道
     int manuallyPushCnt = 0;
 
-    int finishedVehicleCnt = 0;
-    double cumulativeTravelTime = 0;
+    int finishedVehicleCnt = 0;      // 累计穿行时间
+    double cumulativeTravelTime = 0; // 累计穿行时间
 
   private:
     void vehicleControl(Vehicle &vehicle, std::vector<std::pair<Vehicle *, double>> &buffer);
@@ -155,6 +155,8 @@ class Engine {
 
     std::map<std::string, double> getVehicleDistance() const;
 
+    std::map<std::string, std::string> getVehicleInfo(const std::string &id) const;
+
     std::string getLeader(const std::string &vehicleId) const;
 
     double getCurrentTime() const;
@@ -179,14 +181,14 @@ class Engine {
     void load(const Archive &archive) {
         archive.resume(*this);
     }
+
     Archive snapshot() {
         return Archive(*this);
     }
+
     void loadFromFile(const char *fileName);
 
     bool setRoute(const std::string &vehicle_id, const std::vector<std::string> &anchor_id);
-
-    std::map<std::string, std::string> getVehicleInfo(const std::string &id) const;
 };
 
 } // namespace CityFlow

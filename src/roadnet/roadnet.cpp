@@ -294,6 +294,7 @@ bool RoadNet::loadFromJson(std::string jsonFileName) { // 从 json 读入
         return false;
     }
 
+    // init cross
     for (auto &intersection : intersections)
         intersection.initCrosses();
     VehicleInfo vehicleTemplate;
@@ -419,7 +420,7 @@ Lane::Lane(double width, double maxSpeed, int laneIndex, Road *belongRoad) {
     drivableType = LANE;
 }
 
-bool Lane::available(const Vehicle *vehicle) const { // ?
+bool Lane::available(const Vehicle *vehicle) const { // 是否可由 buffer 进入 lane
     if (!vehicles.empty()) {
         Vehicle *tail = vehicles.back();
         return tail->getDistance() > tail->getLen() + vehicle->getMinGap();
@@ -428,7 +429,7 @@ bool Lane::available(const Vehicle *vehicle) const { // ?
     }
 }
 
-bool Lane::canEnter(const Vehicle *vehicle) const { // ?
+bool Lane::canEnter(const Vehicle *vehicle) const { // 是否可以进入此 lane
     if (!vehicles.empty()) {
         Vehicle *tail = vehicles.back();
         return tail->getDistance() > tail->getLen() + vehicle->getLen() || tail->getSpeed() >= 2; // todo: speed > 2 or?
@@ -596,78 +597,80 @@ void Cross::notify(LaneLink *laneLink, Vehicle *vehicle, double notifyDistance) 
     notifyDistances[i] = notifyDistance;
 }
 
-bool Cross::canPass(const Vehicle *vehicle, const LaneLink *laneLink, double distanceToLaneLinkStart) const {
+bool Cross::canPass(const Vehicle *vehicle, const LaneLink *laneLink,
+                    double distanceToLaneLinkStart) const { // 当前车辆是否可以不停车通过（细节待确认）
     // TODO: should be improved
     assert(laneLink == laneLinks[0] || laneLink == laneLinks[1]);
-    int i = (laneLink == laneLinks[0]) ? 0 : 1;
+    int i = (laneLink == laneLinks[0]) ? 0 : 1; // 当前为 laneLink[i]
 
-    Vehicle *foeVehicle = notifyVehicles[1 - i];
+    Vehicle *foeVehicle = notifyVehicles[1 - i]; // 可能在 cross 相遇的车
     RoadLinkType t1 = laneLinks[i]->getRoadLinkType();
     RoadLinkType t2 = laneLinks[1 - i]->getRoadLinkType();
-    double d1 = distanceOnLane[i] - distanceToLaneLinkStart, d2 = notifyDistances[1 - i];
+    double d1 = distanceOnLane[i] - distanceToLaneLinkStart,
+           d2 = notifyDistances[1 - i]; // d1:当前车距 cross 的距离；d2:另一个 laneLink 上车距 corss 的距离
 
-    if (foeVehicle == nullptr)
+    if (foeVehicle == nullptr) // 对应 laneLink 安全范围内无车
         return true;
 
-    if (!vehicle->canYield(d1))
+    if (!vehicle->canYield(d1)) // 当前 vehicle 不可让步
         return true;
 
     int yield = 0;
-    if (!foeVehicle->canYield(d2))
+    if (!foeVehicle->canYield(d2)) // foeVehicle 不可让步
         yield = 1;
 
-    if (yield == 0) {
-        if (t1 > t2) {
+    if (yield == 0) {  // foeVehicle 可让步
+        if (t1 > t2) { // go_straight = 3, turn_left = 2, turn_right = 1，交通规则导致可 pass
             yield = -1;
-        } else if (t1 < t2) {
-            if (d2 > 0) {
+        } else if (t1 < t2) { // 交通规则导致不可 pass
+            if (d2 > 0) {     // foeVehicle 未到达 cross
                 // todo: can be improved, check if higher priority vehicle is blocked by other vehicles, hard!
-                int foeVehicleReachSteps = foeVehicle->getReachStepsOnLaneLink(d2, laneLinks[1 - i]);
-                int reachSteps = vehicle->getReachStepsOnLaneLink(d1, laneLinks[i]);
-                if (foeVehicleReachSteps > reachSteps) {
+                int foeVehicleReachSteps = foeVehicle->getReachStepsOnLaneLink(d2, laneLinks[1 - i]); // foeVehicle到达 cross 所需时间段
+                int reachSteps = vehicle->getReachStepsOnLaneLink(d1, laneLinks[i]);                  // 自己到达 cross 所需时间段
+                if (foeVehicleReachSteps > reachSteps) {                                              // foeVehicle 晚到达，让步
                     yield = -1;
                 }
-            } else {
-                if (d2 + foeVehicle->getLen() < 0) {
+            } else {                                 // foeVehicle 已过 cross
+                if (d2 + foeVehicle->getLen() < 0) { // ? 由 forVehicle->yield = true 可知此时必满足
                     yield = -1;
                 }
             }
-            if (yield == 0)
+            if (yield == 0) // 上述不冲突条件均未满足
                 yield = 1;
-        } else {
-            if (d2 > 0) {
+        } else {          // 同向交叉
+            if (d2 > 0) { // foeVehicle 未到达 cross
                 int foeVehicleReachSteps = foeVehicle->getReachStepsOnLaneLink(d2, laneLinks[1 - i]);
                 int reachSteps = vehicle->getReachStepsOnLaneLink(d1, laneLinks[i]);
-                if (foeVehicleReachSteps > reachSteps) {
+                if (foeVehicleReachSteps > reachSteps) { // foeVehicle 晚到则可 pass
                     yield = -1;
-                } else if (foeVehicleReachSteps < reachSteps) {
+                } else if (foeVehicleReachSteps < reachSteps) { // 早到则被阻拦
                     yield = 1;
-                } else {
-                    if (vehicle->getEnterLaneLinkTime() == foeVehicle->getEnterLaneLinkTime()) {
-                        if (d1 == d2) {
-                            yield = vehicle->getPriority() > foeVehicle->getPriority() ? -1 : 1;
-                        } else {
+                } else {                                                                         // 同 step 到达
+                    if (vehicle->getEnterLaneLinkTime() == foeVehicle->getEnterLaneLinkTime()) { // 同一时间进 laneLink
+                        if (d1 == d2) {                                                          // 距 cross 同距离
+                            yield = vehicle->getPriority() > foeVehicle->getPriority() ? -1 : 1; // 自己优先级高则不被阻拦
+                        } else {                                                                 // 距离不同谁进谁过
                             yield = d1 < d2 ? -1 : 1;
                         }
                     } else {
-                        yield = vehicle->getEnterLaneLinkTime() < foeVehicle->getEnterLaneLinkTime() ? -1 : 1;
+                        yield = vehicle->getEnterLaneLinkTime() < foeVehicle->getEnterLaneLinkTime() ? -1 : 1; // 谁早进 laneLink 谁过
                     }
                 }
-            } else {
+            } else { // ? 由 forVehicle->yield = true 可知此时必为 -1
                 yield = d2 + foeVehicle->getLen() < 0 ? -1 : 1;
             }
         }
     }
     assert(yield != 0);
-    if (yield == 1) {
+    if (yield == 1) { // vehicle 与 foeVehicle 都不可让步
         Vehicle *fastPointer = foeVehicle;
         Vehicle *slowPointer = foeVehicle;
         while (fastPointer != nullptr && fastPointer->getBlocker() != nullptr) {
             slowPointer = slowPointer->getBlocker();
             fastPointer = fastPointer->getBlocker()->getBlocker();
-            if (slowPointer == fastPointer) {
+            if (slowPointer == fastPointer) { // 成环死锁
                 // deadlock detected
-                yield = -1;
+                yield = -1; // foeVehicle 死锁不可动，当前 Vehicle 通行
                 break;
             }
         }
@@ -867,7 +870,7 @@ void Lane::buildSegmentation(size_t numSegs) {
     }
 }
 
-void Lane::initSegments() {
+void Lane::initSegments() { // 由 lane 中的 vehicle 的 dis 更新每个 segment 内的车辆信息
     auto iter = this->vehicles.begin();
     auto end = this->vehicles.end();
     for (int i = (int)segments.size() - 1; i >= 0; i--) {
@@ -949,7 +952,7 @@ void Segment::removeVehicle(Vehicle *vehicle) {
         }
 }
 
-void Segment::insertVehicle(std::list<Vehicle *>::iterator &vehicle) {
+void Segment::insertVehicle(std::list<Vehicle *>::iterator &vehicle) { // 在 segment 中 按 dis 找到对应插入位置
     auto itr = vehicles.begin();
     for (; itr != vehicles.end() && (**itr)->getDistance() > (*vehicle)->getDistance(); ++itr)
         ;

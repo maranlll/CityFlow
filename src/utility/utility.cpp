@@ -23,6 +23,7 @@ Point operator-(const Point &A, const Point &B) {
 Point operator+(const Point &A, const Point &B) {
     return {A.x + B.x, A.y + B.y};
 }
+
 Point operator-(const Point &A) {
     return {-A.x, -A.y};
 }

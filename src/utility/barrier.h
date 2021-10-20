@@ -8,6 +8,12 @@
 
 namespace CityFlow {
 class Barrier {
+  private:
+    std::mutex m_mutex;                  // 互斥锁
+    std::condition_variable m_condition; // 条件锁
+    const size_t m_threads;              // 线程数
+    size_t counter[2], *currCounter;
+
   public:
     Barrier(std::size_t nb_threads) : m_threads(nb_threads), currCounter(&counter[0]) {
         assert(0u != m_threads);
@@ -24,12 +30,6 @@ class Barrier {
     Barrier &operator=(Barrier &&barrier) = delete;
 
     void wait();
-
-  private:
-    std::mutex m_mutex;
-    std::condition_variable m_condition;
-    const size_t m_threads;
-    size_t counter[2], *currCounter;
 };
 } // namespace CityFlow
 

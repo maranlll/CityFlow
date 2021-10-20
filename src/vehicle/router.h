@@ -20,12 +20,12 @@ class Router {
 
   private:
     Vehicle *vehicle = nullptr;                   // router 对应的车辆
-    std::vector<Road *> route;                    // 到达各 anchorpoint 的具体走法
-    std::vector<Road *> anchorPoints;             // 必须要到达的点
-    std::vector<Road *>::const_iterator iCurRoad; // 当前所在的 route 的位置
+    std::vector<Road *> route;                    // 由 anchorPoints 生成的最短路径
+    std::vector<Road *> anchorPoints;             // Flow 提供的必须经过的 Road
+    std::vector<Road *>::const_iterator iCurRoad; // 当前所在的 road 的位置
     std::mt19937 *rnd = nullptr;                  // 随机数
 
-    mutable std::deque<Drivable *> planned; // 当前走过的路径缓存？
+    mutable std::deque<Drivable *> planned; // 未来要走的路径缓存，由 getNextDrivable() 提前计算得出
 
     int selectLaneIndex(const Lane *curLane, const std::vector<Lane *> &lanes) const;
 
@@ -34,9 +34,9 @@ class Router {
     Lane *selectLane(const Lane *curLane, const std::vector<Lane *> &lanes) const;
 
     enum class RouterType {
-        LENGTH,
-        DURATION,
-        DYNAMIC // TODO: dynamic routing
+        LENGTH,   // 权值为长度
+        DURATION, // 权值为时间
+        DYNAMIC   // TODO: dynamic routing
     };
 
     RouterType type = RouterType::LENGTH;
@@ -62,7 +62,7 @@ class Router {
 
     bool onLastRoad() const;
 
-    bool onValidLane() const {
+    bool onValidLane() const { // 当无下一条路且 route 未到末尾说明出错
         return !(getNextDrivable() == nullptr && !onLastRoad());
     }
 

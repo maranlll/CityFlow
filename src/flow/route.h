@@ -8,7 +8,7 @@ class Road;
 
 class Route {
   private:
-    std::vector<Road *> route;
+    std::vector<Road *> route; // 待走路径
 
   public:
     Route() = default;

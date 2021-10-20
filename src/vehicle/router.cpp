@@ -21,60 +21,60 @@ Router::Router(Vehicle *vehicle, std::shared_ptr<const Route> route, std::mt1993
 
 Drivable *Router::getFirstDrivable() const {
     const std::vector<Lane *> &lanes = route[0]->getLanePointers();
-    if (route.size() == 1) {
-        return selectLane(nullptr, lanes);
+    if (route.size() == 1) {               // 仅 1 road
+        return selectLane(nullptr, lanes); // 随机选 lane
     } else {
         std::vector<Lane *> candidateLanes;
         for (auto lane : lanes) {
-            if (lane->getLaneLinksToRoad(route[1]).size() > 0) {
+            if (lane->getLaneLinksToRoad(route[1]).size() > 0) { // 选择能驶向 route[1] 的 laneLink 的 lane
                 candidateLanes.push_back(lane);
             }
         }
         assert(candidateLanes.size() > 0);
-        return selectLane(nullptr, candidateLanes);
+        return selectLane(nullptr, candidateLanes); // candidateLanes 内选 lane
     }
 }
 
-Drivable *Router::getNextDrivable(size_t i) const {
-    if (i < planned.size()) {
+Drivable *Router::getNextDrivable(size_t i) const { // 后续将走的 drivable
+    if (i < planned.size()) {                       // 已计算
         return planned[i];
-    } else {
-        Drivable *ret = getNextDrivable(planned.size() ? planned.back() : vehicle->getCurDrivable());
-        planned.push_back(ret);
+    } else {                                                                                          // 未事先计算
+        Drivable *ret = getNextDrivable(planned.size() ? planned.back() : vehicle->getCurDrivable()); // 在前一个 drivable 基础上计算 nextDrivable
+        planned.push_back(ret);                                                                       // 填入 planned 备用
         return ret;
     }
 }
 
-Drivable *Router::getNextDrivable(const Drivable *curDrivable) const { // 走向下一个 road 的 dirvable 走法
-    if (curDrivable->isLaneLink()) {
+Drivable *Router::getNextDrivable(const Drivable *curDrivable) const { // 由当前 drivable 计算下一个 drivable（当前为 lane 则给出 laneLink，反之同理）
+    if (curDrivable->isLaneLink()) {                                   // 当前是 laneLink 直接得出
         return static_cast<const LaneLink *>(curDrivable)->getEndLane();
-    } else {
+    } else { // 当前是 lane
         const Lane *curLane = static_cast<const Lane *>(curDrivable);
         auto tmpCurRoad = iCurRoad;
-        while ((*tmpCurRoad) != curLane->getBelongRoad() && tmpCurRoad != route.end()) {
+        while ((*tmpCurRoad) != curLane->getBelongRoad() && tmpCurRoad != route.end()) { // 更新 iCurRoad
             tmpCurRoad++;
         }
         assert(tmpCurRoad != route.end() && curLane->getBelongRoad() == (*tmpCurRoad));
-        if (tmpCurRoad == route.end() - 1) {
+        if (tmpCurRoad == route.end() - 1) { // 已到 route 末尾
             return nullptr;
-        } else if (tmpCurRoad == route.end() - 2) {
+        } else if (tmpCurRoad == route.end() - 2) { // route 内倒数第二 road
             std::vector<LaneLink *> laneLinks = curLane->getLaneLinksToRoad(*(tmpCurRoad + 1));
-            return selectLaneLink(curLane, laneLinks);
-        } else {
-            std::vector<LaneLink *> laneLinks = curLane->getLaneLinksToRoad(*(tmpCurRoad + 1));
+            return selectLaneLink(curLane, laneLinks); // 走向可选 laneLink 的 endLane 中距离 curlane 最近的 lane
+        } else {                                       // 选取的 laneLink 需能确保到达 route 的再下一个 road
+            std::vector<LaneLink *> laneLinks = curLane->getLaneLinksToRoad(*(tmpCurRoad + 1)); // 由 route[i] 到 route[i+1] 的 laneLink
             std::vector<LaneLink *> candidateLaneLinks;
             for (auto laneLink : laneLinks) {
                 Lane *nextLane = laneLink->getEndLane();
-                if (nextLane->getLaneLinksToRoad(*(tmpCurRoad + 2)).size()) {
+                if (nextLane->getLaneLinksToRoad(*(tmpCurRoad + 2)).size()) { // 走此 laneLink 后能从 route[i+1] 到达 route[i+2]
                     candidateLaneLinks.push_back(laneLink);
                 }
             }
-            return selectLaneLink(curLane, candidateLaneLinks);
+            return selectLaneLink(curLane, candidateLaneLinks); // 变动最少的 laneLink
         }
     }
 }
 
-void Router::update() {
+void Router::update() { // 更新 iCurRoad 与 planned
     const Drivable *curDrivable = vehicle->getCurDrivable();
     if (curDrivable->isLane()) {
         while (iCurRoad < route.end() && static_cast<const Lane *>(curDrivable)->getBelongRoad() != (*iCurRoad)) {
@@ -82,7 +82,7 @@ void Router::update() {
         }
         assert(iCurRoad < route.end());
     }
-    for (auto it = planned.begin(); it != planned.end();) {
+    for (auto it = planned.begin(); it != planned.end();) { // curDrivable 发生变化则先前缓存的 planned 部分或全部不再可用
         if ((*it) != curDrivable) {
             it = planned.erase(it);
         } else {
@@ -92,11 +92,12 @@ void Router::update() {
     }
 }
 
-int Router::selectLaneIndex(const Lane *curLane, const std::vector<Lane *> &lanes) const {
+int Router::selectLaneIndex(const Lane *curLane, const std::vector<Lane *> &lanes) const { // 根据当前 lane 在备选区选下一个 lane 的 编号
     assert(lanes.size() > 0);
-    if (curLane == nullptr) {
+    if (curLane == nullptr) { // 当前未入 lane，随机选择备选 lane
         return (*rnd)() % lanes.size();
     }
+    // 已在 lane 上则选择最相邻的 lane
     int laneDiff = std::numeric_limits<int>::max();
     int selected = -1;
     for (size_t i = 0; i < lanes.size(); ++i) {
@@ -109,14 +110,15 @@ int Router::selectLaneIndex(const Lane *curLane, const std::vector<Lane *> &lane
     return selected;
 }
 
-Lane *Router::selectLane(const Lane *curLane, const std::vector<Lane *> &lanes) const {
+Lane *Router::selectLane(const Lane *curLane, const std::vector<Lane *> &lanes) const { // 根据当前 lane 在备选区选下一个 lane
     if (lanes.size() == 0) {
         return nullptr;
     }
     return lanes[selectLaneIndex(curLane, lanes)];
 }
 
-LaneLink *Router::selectLaneLink(const Lane *curLane, const std::vector<LaneLink *> &laneLinks) const {
+LaneLink *Router::selectLaneLink(const Lane *curLane,
+                                 const std::vector<LaneLink *> &laneLinks) const { // 根据当前 lane 在 laneLink 备选区的 endline 内选下一个 lane
     if (laneLinks.size() == 0) {
         return nullptr;
     }
@@ -156,7 +158,7 @@ Lane *Router::getValidLane(const Lane *curLane) const { // 可选的 lanechange
     return chosen;
 }
 
-bool Router::dijkstra(Road *start, Road *end, std::vector<Road *> &buffer) {
+bool Router::dijkstra(Road *start, Road *end, std::vector<Road *> &buffer) { // 最短路
     std::map<Road *, double> dis;
     std::map<Road *, Road *> from;
     std::set<Road *> visited;
@@ -225,7 +227,7 @@ bool Router::dijkstra(Road *start, Road *end, std::vector<Road *> &buffer) {
     return success;
 }
 
-bool Router::updateShortestPath() {
+bool Router::updateShortestPath() { // 更新 route 为 经过 anchorpoint 各路的最短路
     // Dijkstra
     planned.clear();
     route.clear();

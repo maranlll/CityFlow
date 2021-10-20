@@ -19,20 +19,20 @@ class Engine;
 class Point;
 class Flow;
 
-struct VehicleInfo {
-    double speed = 0;
-    double len = 5;
-    double width = 2;
-    double maxPosAcc = 4.5;
-    double maxNegAcc = 4.5;
-    double usualPosAcc = 2.5;
-    double usualNegAcc = 2.5;
-    double minGap = 2;
-    double maxSpeed = 16.66667;
+struct VehicleInfo {            // 车辆预设信息
+    double speed = 0;           // 速度
+    double len = 5;             // 车长
+    double width = 2;           // 车宽
+    double maxPosAcc = 4.5;     // 最大加速
+    double maxNegAcc = 4.5;     // 最大减速
+    double usualPosAcc = 2.5;   // 常规加速
+    double usualNegAcc = 2.5;   // 常规减速
+    double minGap = 2;          // 与前车最小间距
+    double maxSpeed = 16.66667; // 最大速度
     double headwayTime = 1;
-    double yieldDistance = 5;
-    double turnSpeed = 8.3333;
-    std::shared_ptr<const Route> route = nullptr;
+    double yieldDistance = 5;                     // 让步距离
+    double turnSpeed = 8.3333;                    // 转弯速度
+    std::shared_ptr<const Route> route = nullptr; // 路径
 };
 
 class Vehicle {
@@ -42,7 +42,7 @@ class Vehicle {
     friend class Archive;
 
   private:
-    struct Buffer { // 待更新到 controllerInfo 等的车辆信息缓存
+    struct Buffer { // VehicleControl 后待更新到 controllerInfo 等的车辆信息缓存
         bool isDisSet = false;
         bool isSpeedSet = false;
         bool isDrivableSet = false;
@@ -52,36 +52,34 @@ class Vehicle {
         bool isBlockerSet = false;
         bool isCustomSpeedSet = false;
 
-        double dis;
-        double speed;
-        Drivable *drivable;
+        double dis;         // 在 drivable 上行驶的 dis
+        double speed;       // 在 drivable 上行驶的速度
+        Drivable *drivable; // 新的 drivable
         std::vector<Vehicle *> notifiedVehicles;
-        bool end;
-        size_t enterLaneLinkTime;
-        Vehicle *blocker = nullptr;
+        bool end;                   // 是否完成当前操作
+        size_t enterLaneLinkTime;   // 进入 LaneLink 的时间
+        Vehicle *blocker = nullptr; // 被 blocker block
         double customSpeed;
-        double deltaDis;
+        double deltaDis; // ？
     };
-
     struct LaneChangeInfo {    // 换路控制
         short partnerType = 0; // 0 for no partner; 1 for real vehicle; 2 for shadow vehicle;
         Vehicle *partner = nullptr;
         double offset = 0;
         size_t segmentIndex = 0;
     };
-
-    struct ControllerInfo { // 车辆行驶信息？
-        double dis = 0;
-        Drivable *drivable = nullptr;
-        Drivable *prevDrivable = nullptr;
+    struct ControllerInfo {               // 车辆行驶信息？
+        double dis = 0;                   // 当前 drivable 上形式的距离
+        Drivable *drivable = nullptr;     // 当前所在的 drivable
+        Drivable *prevDrivable = nullptr; // 上一个 drivable
         double approachingIntersectionDistance;
-        double gap;
-        size_t enterLaneLinkTime;
-        Vehicle *leader = nullptr;
-        Vehicle *blocker = nullptr;
-        bool end = false;
-        bool running = false;
-        Router router;
+        double gap;                 // 与 leader 间的距离
+        size_t enterLaneLinkTime;   // 如果当前所在 drivable 为 laneLink, 则为进入的时间；否则为 理论最值
+        Vehicle *leader = nullptr;  // 前车
+        Vehicle *blocker = nullptr; // 在 cross 处受 blocker 阻碍
+        bool end = false;           // 是否已完成 router
+        bool running = false;       // 正在运行
+        Router router;              // 总体路径信息控制与记录
         ControllerInfo(Vehicle *vehicle, std::shared_ptr<const Route> route, std::mt19937 *rnd);
         ControllerInfo(Vehicle *vehicle, const ControllerInfo &other);
     };
@@ -91,15 +89,15 @@ class Vehicle {
     LaneChangeInfo laneChangeInfo;
     ControllerInfo controllerInfo;
 
-    int priority;
-    std::string id;
-    double enterTime;
+    int priority;     // 独有，用于 VehiclePool
+    std::string id;   // flow_i_j，用于 VehicleMap
+    double enterTime; // 由 Flow 创建的时间，即进入 RoadNet 的时间
 
     Engine *engine;
 
-    std::shared_ptr<LaneChange> laneChange;
+    std::shared_ptr<LaneChange> laneChange; // 虚函数动态绑定，记录 laneChange 相关信息
 
-    bool routeValid = false;
+    bool routeValid = false; // route 是否可达，值由 updateRoute() 获取
     Flow *flow;
 
   public:
@@ -120,12 +118,12 @@ class Vehicle {
         buffer.isCustomSpeedSet = true;
     }
 
-    void setDis(double dis) {
+    void setDis(double dis) { // 存入 buffer 距待更新 drivable 起点距离
         buffer.dis = dis;
         buffer.isDisSet = true;
     }
 
-    void setDrivable(Drivable *drivable) {
+    void setDrivable(Drivable *drivable) { // 存入 buffer 待更新 drivable
         buffer.drivable = drivable;
         buffer.isDrivableSet = true;
     }
@@ -280,7 +278,7 @@ class Vehicle {
 
     double getBrakeDistanceAfterAccel(double acc, double dec, double interval) const;
 
-    inline double getMinBrakeDistance() const {
+    inline double getMinBrakeDistance() const { // 减速到 0 最短距离
         return 0.5 * vehicleInfo.speed * vehicleInfo.speed / vehicleInfo.maxNegAcc;
     }
 
@@ -330,7 +328,7 @@ class Vehicle {
         return controllerInfo.running;
     }
 
-    inline void setRunning(bool isRunning = true) {
+    inline void setRunning(bool isRunning = true) { // 状态开跑
         controllerInfo.running = isRunning;
     }
 
@@ -338,7 +336,7 @@ class Vehicle {
         return laneChangeInfo.partnerType > 0;
     }
 
-    inline bool isReal() const {
+    inline bool isReal() const { // 非 shadow
         return laneChangeInfo.partnerType != 2;
     }
 
@@ -350,11 +348,11 @@ class Vehicle {
         laneChangeInfo.segmentIndex = segmentIndex;
     }
 
-    inline void setShadow(Vehicle *veh) {
+    inline void setShadow(Vehicle *veh) { // 自己是原 vehicle
         laneChangeInfo.partnerType = 1, laneChangeInfo.partner = veh;
     }
 
-    inline void setParent(Vehicle *veh) {
+    inline void setParent(Vehicle *veh) { // 自己是 shadow
         laneChangeInfo.partnerType = 2, laneChangeInfo.partner = veh;
     }
 
@@ -441,7 +439,7 @@ class Vehicle {
     }
 
     int getLaneChangeDirection() const {
-        if (!laneChange->signalSend)
+        if (!laneChange->signalSend) // laneChange = false
             return 0;
         return laneChange->signalSend->direction;
     }

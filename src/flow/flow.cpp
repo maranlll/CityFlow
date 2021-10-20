@@ -10,6 +10,7 @@ void Flow::nextStep(double timeInterval) {
     if (currentTime >= startTime) {
         while (nowTime >= interval) {
             Vehicle *vehicle = new Vehicle(vehicleTemplate, id + "_" + std::to_string(cnt++), engine, this);
+            // priority has been set correctlly before?
             int priority = vehicle->getPriority();
             while (engine->checkPriority(priority))
                 priority = engine->rnd();
