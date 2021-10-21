@@ -9,27 +9,27 @@ class RoadLink;
 class RoadNet;
 class TrafficLight;
 
-class LightPhase {
+class LightPhase { // 信号状态
     friend class RoadNet;
     friend class RoadLink;
     friend class TrafficLight;
 
   private:
     unsigned int phase = 0;
-    double time = 0.0; // 持续时间
-    std::vector<bool> roadLinkAvailable;
+    double time = 0.0;                   // 持续时间
+    std::vector<bool> roadLinkAvailable; // 哪些 roadLink 可过
 };
 
-class TrafficLight {
+class TrafficLight { // 信号集
     friend class RoadNet;
     friend class Archive;
 
   private:
-    Intersection *intersection = nullptr;
-    std::vector<LightPhase> phases;
+    Intersection *intersection = nullptr; // 所属 intersection
+    std::vector<LightPhase> phases;       // 信号集
     std::vector<int> roadLinkIndices;
-    double remainDuration = 0.0;
-    int curPhaseIndex = 0;
+    double remainDuration = 0.0; // 当前信号剩余时间
+    int curPhaseIndex = 0;       // 当前所在信号阶段
 
   public:
     void init(int initPhaseIndex);
@@ -42,7 +42,7 @@ class TrafficLight {
 
     std::vector<LightPhase> &getPhases();
 
-    void passTime(double seconds);
+    void passTime(double seconds); // 经过 seconds
 
     void setPhase(int phaseIndex);
 

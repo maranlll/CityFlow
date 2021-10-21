@@ -22,8 +22,7 @@ Engine::Engine(const std::string &configFile, int threadNum) : threadNum(threadN
         std::cerr << "load config failed!" << std::endl;
     }
     for (int i = 0; i < threadNum; i++) { // 线程创建
-        threadPool.emplace_back(&Engine::threadController, this, std::ref(threadVehiclePool[i]), std::ref(threadRoadPool[i]),
-                                std::ref(threadIntersectionPool[i]), std::ref(threadDrivablePool[i]));
+        threadPool.emplace_back(&Engine::threadController, this, std::ref(threadVehiclePool[i]), std::ref(threadRoadPool[i]), std::ref(threadIntersectionPool[i]), std::ref(threadDrivablePool[i]));
     }
 }
 
@@ -186,9 +185,18 @@ bool Engine::checkWarning() { // check data
     return result;
 }
 
-// 线程函数
-void Engine::threadController(std::set<Vehicle *> &vehicles, std::vector<Road *> &roads, std::vector<Intersection *> &intersections,
-                              std::vector<Drivable *> &drivables) { // 线程函数
+void Engine::pushVehicle(Vehicle *const vehicle, bool pushToDrivable) { // 手动添加车辆
+    size_t threadIndex = rnd() % threadNum;                             // 随机放入一个线程池
+    vehiclePool.emplace(vehicle->getPriority(), std::make_pair(vehicle, threadIndex));
+    vehicleMap.emplace(vehicle->getId(), vehicle);
+    threadVehiclePool[threadIndex].insert(vehicle);
+
+    if (pushToDrivable) // 放入 drivable
+        ((Lane *)vehicle->getCurDrivable())->pushWaitingVehicle(vehicle);
+}
+
+// 子线程函数
+void Engine::threadController(std::set<Vehicle *> &vehicles, std::vector<Road *> &roads, std::vector<Intersection *> &intersections, std::vector<Drivable *> &drivables) { // 子线程创建
     while (!finished) {
         threadPlanRoute(roads); // 对 planBuffer 中的每个 vehicle 求最短路 route 与 route 是否有效
         if (laneChange) {
@@ -223,14 +231,14 @@ void Engine::threadInitSegments(const std::vector<Road *> &roads) { // 更新 la
     endBarrier.wait();
 }
 
-void Engine::threadPlanLaneChange(const std::set<CityFlow::Vehicle *> &vehicles) { // 对 vehicles 判断是否可 laneChange
+void Engine::threadPlanLaneChange(const std::set<CityFlow::Vehicle *> &vehicles) { // 对各 vehicles 判断是否可 laneChange
     startBarrier.wait();
     std::vector<CityFlow::Vehicle *> buffer;
 
     for (auto vehicle : vehicles)
         if (vehicle->isRunning() && vehicle->isReal()) { // 车辆行驶中且非 shadow
-            vehicle->makeLaneChangeSignal(interval);     // laneChange 判断并寻找 target
-            if (vehicle->planLaneChange()) {             // 待转
+            vehicle->makeLaneChangeSignal(interval);     // laneChange 判断并寻找 targetLane
+            if (vehicle->planLaneChange()) {             // 可 laneChange 并找到 targetLane
                 buffer.emplace_back(vehicle);
             }
         }
@@ -256,9 +264,8 @@ void Engine::threadUpdateLeaderAndGap(const std::vector<Drivable *> &drivables) 
     endBarrier.wait();
 }
 
-void Engine::threadNotifyCross(
-    const std::vector<Intersection *> &intersections) { // 为每一个 cross 填入两个 notifyVehicle (为啥不填入最近的 vehicle ？)
-    // TODO: iterator for laneLink
+void Engine::threadNotifyCross(const std::vector<Intersection *> &intersections) { // 更新每个 cross 的信息 TODO: leaveDistance 设置
+    // TODO: iterator for laneLink                                                 // 目前 leaveDistance = 0 所以是找离 cross 最近且未到达 cross 的车
     startBarrier.wait();
     for (Intersection *intersection : intersections)
         for (Cross &cross : intersection->getCrosses())
@@ -268,7 +275,7 @@ void Engine::threadNotifyCross(
         for (LaneLink *laneLink : intersection->getLaneLinks()) {
             // XXX: no cross in laneLink?
             const auto &crosses = laneLink->getCrosses();
-            auto rIter = crosses.rbegin();
+            auto rIter = crosses.rbegin(); // 从末尾 cross 开始
 
             // first check the vehicle on the end lane
             Vehicle *vehicle = laneLink->getEndLane()->getLastVehicle();
@@ -276,8 +283,8 @@ void Engine::threadNotifyCross(
                 double vehDistance = vehicle->getDistance() - vehicle->getLen();              // vehicle 距离 endLane 起点距离
                 while (rIter != crosses.rend()) {
                     double crossDistance = laneLink->getLength() - (*rIter)->getDistanceByLane(laneLink); // cross 距 laneLink 终点
-                    if (crossDistance + vehDistance < (*rIter)->getLeaveDistance()) { // vehicle 距 cross 的距离小于 leaveDistance
-                        (*rIter)->notify(laneLink, vehicle, -(vehicle->getDistance() + crossDistance)); // 信息填入此 cross
+                    if (crossDistance + vehDistance < (*rIter)->getLeaveDistance()) {                     // vehicle 距 cross 的距离小于 leaveDistance
+                        (*rIter)->notify(laneLink, vehicle, -(vehicle->getDistance() + crossDistance));   // 信息填入此 cross
                         ++rIter;
                     } else
                         break;
@@ -295,8 +302,8 @@ void Engine::threadNotifyCross(
                             (*rIter)->notify(laneLink, linkVehicle, crossDistance - vehDistance);                  // notifyCross
                         } else                                                                                     // 用更近的 vehicle
                             break;
-                    } else { // vehicle 未过 cross
-                        (*rIter)->notify(laneLink, linkVehicle, crossDistance - vehDistance);
+                    } else {                                                                  // vehicle 未过 cross
+                        (*rIter)->notify(laneLink, linkVehicle, crossDistance - vehDistance); // 目前只有这个和 startLane 上的处理有用
                     }
                     ++rIter;
                 }
@@ -328,7 +335,7 @@ void Engine::threadGetAction(std::set<Vehicle *> &vehicles) { // 各类数据计
     endBarrier.wait();
 }
 
-void Engine::threadUpdateLocation(const std::vector<Drivable *> &drivables) { // 从各 drivable 去除离开的或被 abort 的 vehicle
+void Engine::threadUpdateLocation(const std::vector<Drivable *> &drivables) { // 从各 drivable 去除离开的 vehicle，记录完成 route 车辆，delete 不需要的
     startBarrier.wait();
     for (Drivable *drivable : drivables) {
         auto &vehicles = drivable->getVehicles();
@@ -336,17 +343,16 @@ void Engine::threadUpdateLocation(const std::vector<Drivable *> &drivables) { //
         while (vehicleItr != vehicles.end()) {
             Vehicle *vehicle = *vehicleItr;
 
-            if ((vehicle->getChangedDrivable()) != nullptr ||
-                vehicle->hasSetEnd()) {                  // 该车已移动到下一个 drivable 或 vehicle.finishChange 或 shadow.abortChange
-                vehicleItr = vehicles.erase(vehicleItr); // 从此 drivable 清除
+            if ((vehicle->getChangedDrivable()) != nullptr || vehicle->hasSetEnd()) { // 该车已移动到下一个 drivable 或 finishChange 或 abortChange
+                vehicleItr = vehicles.erase(vehicleItr);                              // 从此 drivable 清除
             } else {
                 vehicleItr++;
             }
 
-            if (vehicle->hasSetEnd()) { // vehicle.finishChange 或 shadow.abortChange
+            if (vehicle->hasSetEnd()) { // 已跑完 route 或 vehicle.finishChange 或 shadow.abortChange，此时 vehicle 将被 delete
                 std::lock_guard<std::mutex> guard(lock);
                 vehicleRemoveBuffer.insert(vehicle);
-                if (!vehicle->getLaneChange()->hasFinished()) { // shadow.abortChange
+                if (!vehicle->getLaneChange()->hasFinished()) { // shadow.abortChange 与 跑完 route
                     vehicleMap.erase(vehicle->getId());
                     finishedVehicleCnt += 1; // ? 为啥 shadow 要被记录
                     cumulativeTravelTime += getCurrentTime() - vehicle->getEnterTime();
@@ -363,8 +369,7 @@ void Engine::threadUpdateLocation(const std::vector<Drivable *> &drivables) { //
     endBarrier.wait();
 }
 
-void Engine::threadUpdateAction(std::set<Vehicle *> &vehicles) { // vehicle 信息更新，并将 buffer 信息移入 vehicle.controllerInfo
-    startBarrier.wait();
+void Engine::threadUpdateAction(std::set<Vehicle *> &vehicles) { // vehicle 信息更新
     for (auto vehicle : vehicles)
         if (vehicle->isRunning()) {
             if (vehicleRemoveBuffer.count(vehicle->getBufferBlocker())) { // blocker 被移除
@@ -377,9 +382,8 @@ void Engine::threadUpdateAction(std::set<Vehicle *> &vehicles) { // vehicle 信�
     endBarrier.wait();
 }
 
-// 主进程函数
-
-void Engine::planRoute() { // 待线程处理完成后将有效 vehicle 转入 lane 的 waitingBuffer
+// 主线程函数
+void Engine::planRoute() { // 主线程，待子线程处理完 route 后将有效 vehicle 转入 lane 的 waitingBuffer
     startBarrier.wait();
     endBarrier.wait();
     for (auto &road : roadnet.getRoads()) {
@@ -387,7 +391,7 @@ void Engine::planRoute() { // 待线程处理完成后将有效 vehicle 转入 l
             if (vehicle->isRouteValid()) {                          // vehicle.routeValid = true
                 vehicle->setFirstDrivable();                        // vehicle controllerInfor.drivable 设置
                 vehicle->getCurLane()->pushWaitingVehicle(vehicle); // 放入 lane 的 buffer
-            } else {
+            } else {                                                // flow 传入的信息有误，route 不可达
                 Flow *flow = vehicle->getFlow();
                 if (flow)
                     flow->setValid(false); // flow.valid = false, 以后 skip 此 flow
@@ -402,7 +406,8 @@ void Engine::planRoute() { // 待线程处理完成后将有效 vehicle 转入 l
     }
 }
 
-void Engine::handleWaiting() { // 对每个 lane 的 waitingBuffer，判断 buffer 首是否可入 lane；如不可，则等下一个 interval阶段
+void Engine::handleWaiting() { // 对每个 lane 的 waitingBuffer 的首车，判断其是否可入 lane。如可则进入并更新 leader 与 gap；如不可，则等下一个
+                               // interval 阶段，
     for (Lane *lane : roadnet.getLanes()) {
         auto &buffer = lane->getWaitingBuffer();
         if (buffer.empty())
@@ -419,28 +424,37 @@ void Engine::handleWaiting() { // 对每个 lane 的 waitingBuffer，判断 buff
     }
 }
 
-void Engine::initSegments() { // segment 内车辆信息更新
+void Engine::initSegments() { // 主线程，交由子线程完成 Segment 内车辆的更新
     startBarrier.wait();
     endBarrier.wait();
 }
 
-void Engine::planLaneChange() { // 线程判断是否可 laneChange
+void Engine::planLaneChange() { // 主线程，子线程判断是否可 laneChange，主线程进行 insertShadow
     startBarrier.wait();
     endBarrier.wait();
-    scheduleLaneChange(); // 对满足 laneChange 要求的 insert shadow
+    scheduleLaneChange(); // 对 notifyBuffer 内满足要求的 vehicle 进行 insertShadow 操作
 }
 
-void Engine::scheduleLaneChange() { // 对 notifyBuffer 内的 vehicle 进行 insertShadow 操作
-    std::sort(laneChangeNotifyBuffer.begin(), laneChangeNotifyBuffer.end(),
-              [](Vehicle *a, Vehicle *b) { return a->laneChangeUrgency() > b->laneChangeUrgency(); }); // 按 urgency 排序，似乎全是 1？
+void Engine::insertShadow(Vehicle *vehicle) {                                    // 创建 vehicle 的 shadow 并插入
+    size_t threadIndex = vehiclePool.at(vehicle->getPriority()).second;          // 当前车所在线程编号
+    Vehicle *shadow = new Vehicle(*vehicle, vehicle->getId() + "_shadow", this); // 创建 shadow
+    vehicleMap.emplace(shadow->getId(), shadow);
+    vehiclePool.emplace(shadow->getPriority(), std::make_pair(shadow, threadIndex));
+    threadVehiclePool[threadIndex].insert(shadow);
+    vehicle->insertShadow(shadow); // 对当前 vehicle、shadow与 targetLane 信息进行更新
+    activeVehicleCount++;          // 行驶车辆 +1
+}
+
+void Engine::scheduleLaneChange() { // 对 notifyBuffer 内满足要求的 vehicle 进行 insertShadow 操作
+    std::sort(laneChangeNotifyBuffer.begin(), laneChangeNotifyBuffer.end(), [](Vehicle *a, Vehicle *b) { return a->laneChangeUrgency() > b->laneChangeUrgency(); }); // 按 urgency 排序，似乎全是 1？
     for (auto v : laneChangeNotifyBuffer) {
         v->updateLaneChangeNeighbor(); // 找当前车的 targetLeader 与 targetFollower
         v->sendSignal();               // targetLeader 和 targetFollower 接收 signal 并根据 vehicle priority 判断是否接受或覆盖
         // Lane Change
         // Insert a shadow vehicle
-        if (v->planLaneChange() && v->canChange() && !v->isChanging()) { // 可以 laneChange 且优先级最高
+        if (v->planLaneChange() && v->canChange() && !v->isChanging()) { // 可以 laneChange 且未收到更高优先级的 signal
             std::shared_ptr<LaneChange> lc = v->getLaneChange();
-            if (lc->isGapValid() && v->getCurDrivable()->isLane()) { // 满足安全距离可 laneChange 且 当前在 lane 上
+            if (lc->isGapValid() && v->getCurDrivable()->isLane()) { // 满足安全距离可 laneChange 且当前在 lane 上
                 // std::cerr << getCurrentTime() << " " << v->getId() << " dis: " << v->getDistance() << " Can Change from"
                 //<< ((Lane *)v->getCurDrivable())->getId() << " to " << lc->getTarget()->getId() << std::endl;
                 insertShadow(v); // 目标 lane 上设置 shadow
@@ -450,32 +464,32 @@ void Engine::scheduleLaneChange() { // 对 notifyBuffer 内的 vehicle 进行 in
     laneChangeNotifyBuffer.clear();
 }
 
-void Engine::updateLeaderAndGap() { // 更新每个 drivable 上车辆的 gap，交由线程完成
+void Engine::updateLeaderAndGap() { // 主线程，交由子线程更新每个 drivable 上车辆的 leader 与 gap，并更新 lane 的 historyRecord
     startBarrier.wait();
     endBarrier.wait();
 }
 
-void Engine::notifyCross() { // 更新每个 cross 的 notifyVehicile，交由线程完成
+void Engine::notifyCross() { // 主线程，交由子线程更新每个 cross 的信息
     startBarrier.wait();
     endBarrier.wait();
 }
 
-void Engine::getAction() { // 线程负责数据计算计算
+void Engine::getAction() { // 主线程，交由子线程负责车辆数据计算
     startBarrier.wait();
     endBarrier.wait();
 }
 
-void Engine::vehicleControl(Vehicle &vehicle, std::vector<std::pair<Vehicle *, double>> &buffer) { // speed、dis 计算，offset 计算并完成 laneChange
+void Engine::vehicleControl(Vehicle &vehicle, std::vector<std::pair<Vehicle *, double>> &buffer) { // speed、dis 计算，offset 计算并判断是否完成 laneChange
     double nextSpeed;
     if (vehicle.hasSetSpeed()) //已作为 partner 被设定过速度
         nextSpeed = vehicle.getBufferSpeed();
     else
-        nextSpeed = vehicle.getNextSpeed(interval).speed;
+        nextSpeed = vehicle.getNextSpeed(interval).speed; // 多条件要求下速度计算
 
     if (laneChange) {
         Vehicle *partner = vehicle.getPartner();
-        if (partner != nullptr && !partner->hasSetSpeed()) {             // partner 尚未进行 vehicleControl，同步速度
-            double partnerSpeed = partner->getNextSpeed(interval).speed; // partner 角度同步运行
+        if (partner != nullptr && !partner->hasSetSpeed()) { // 有 partner 且尚未进行 vehicleControl，在此同步速度
+            double partnerSpeed = partner->getNextSpeed(interval).speed;
             nextSpeed = min2double(nextSpeed, partnerSpeed);
             partner->setSpeed(nextSpeed);
 
@@ -514,22 +528,22 @@ void Engine::vehicleControl(Vehicle &vehicle, std::vector<std::pair<Vehicle *, d
 
             if (newOffset >= vehicle.getMaxOffset()) {              // laneChange 完成
                 std::lock_guard<std::mutex> guard(lock);            // 互斥锁
-                vehicleMap.erase(vehicle.getPartner()->getId());    // 清除 shadow
-                vehicleMap[vehicle.getId()] = vehicle.getPartner(); // 完成 laneChange
-                vehicle.finishChanging();                           // change = false
+                vehicleMap.erase(vehicle.getPartner()->getId());    // 清除 shadow 的映射
+                vehicleMap[vehicle.getId()] = vehicle.getPartner(); // 完成 laneChange，自己成为 shadow
+                vehicle.finishChanging();                           // change = false，end = true
             }
         }
     }
 
-    if (!vehicle.hasSetEnd() && vehicle.hasSetDrivable()) {    // 发生 drivable 变动且此时尚未到达 end
-        buffer.emplace_back(&vehicle, vehicle.getBufferDis()); // 发生位置移动的进 buffer
+    if (!vehicle.hasSetEnd() && vehicle.hasSetDrivable()) { // 发生 drivable 变动且此时尚未到达 end
+        buffer.emplace_back(&vehicle, vehicle.getBufferDis());
     }
 }
 
-void Engine::updateLocation() { // 线程将 changed Vehicle 从 原 drivable 删去，主进程加入新 drivable
+void Engine::updateLocation() { // 主线程，交由子线程将离开的 vehicle 从原 drivable 删去并记录跑完 route 的数据，主线程将其加入新 drivable
     startBarrier.wait();
     endBarrier.wait();
-    std::sort(pushBuffer.begin(), pushBuffer.end(), vehicleCmp);
+    std::sort(pushBuffer.begin(), pushBuffer.end(), vehicleCmp); // 按距离依次进入
     for (auto &vehiclePair : pushBuffer) {
         Vehicle *vehicle = vehiclePair.first;
         Drivable *drivable = vehicle->getChangedDrivable();
@@ -545,21 +559,21 @@ void Engine::updateLocation() { // 线程将 changed Vehicle 从 原 drivable �
     pushBuffer.clear();
 }
 
-void Engine::updateAction() { // 线程对每个 vehicle 信息进行更新
+void Engine::updateAction() { // 主线程，交由子线程对每个 vehicle 信息进行更新
     startBarrier.wait();
     endBarrier.wait();
     vehicleRemoveBuffer.clear();
 }
 
-void Engine::updateLog() {
+void Engine::updateLog() { // log 信息输出
     std::string result;
     for (const Vehicle *vehicle : getRunningVehicles()) {
         Point pos = vehicle->getPoint();
         Point dir = vehicle->getCurDrivable()->getDirectionByDistance(vehicle->getDistance());
 
         int lc = vehicle->lastLaneChangeDirection();
-        result.append(double2string(pos.x) + " " + double2string(pos.y) + " " + double2string(atan2(dir.y, dir.x)) + " " + vehicle->getId() + " " +
-                      std::to_string(lc) + " " + double2string(vehicle->getLen()) + " " + double2string(vehicle->getWidth()) + ",");
+        result.append(double2string(pos.x) + " " + double2string(pos.y) + " " + double2string(atan2(dir.y, dir.x)) + " " + vehicle->getId() + " " + std::to_string(lc) + " " +
+                      double2string(vehicle->getLen()) + " " + double2string(vehicle->getWidth()) + ",");
     }
     result.append(";");
 
@@ -591,37 +605,27 @@ bool Engine::checkPriority(int priority) { // vehiclePool 中是否存在优先�
     return vehiclePool.find(priority) != vehiclePool.end();
 }
 
-void Engine::insertShadow(Vehicle *vehicle) {                                    // 创建 vehicle 的 shadow 并插入
-    size_t threadIndex = vehiclePool.at(vehicle->getPriority()).second;          // 当前车所在线程编号
-    Vehicle *shadow = new Vehicle(*vehicle, vehicle->getId() + "_shadow", this); // 创建 shadow
-    vehicleMap.emplace(shadow->getId(), shadow);
-    vehiclePool.emplace(shadow->getPriority(), std::make_pair(shadow, threadIndex));
-    threadVehiclePool[threadIndex].insert(shadow);
-    vehicle->insertShadow(shadow); // 对当前 vehicle、shadow与 targetLane 信息进行更新
-    activeVehicleCount++;          // 行驶车辆 +1
-}
-
 // 执行步骤
 void Engine::nextStep() { // 执行过程
     for (auto &flow : flows)
-        flow.nextStep(interval); // 向 road 添加此时会进入的车辆
-    planRoute();        // 多线程，由 anchorpoint 得出 vehicle 所要走的最短路 route，并由 Road 的 buffer，并转入 lane 的 buffer
-    handleWaiting();    // 由 buffer 进入 lane，计算新进入 vehicle 的 leader 与 gap
-    if (laneChange) {   // 允许 laneChange
-        initSegments(); // 多线程, 对 lane 中的每一 vehicle 更新 segmentIndex
-        planLaneChange(); // 多线程, 找出所有想要 laneChange 的 Vehicle 并 insertShadow
-        updateLeaderAndGap(); // 多线程, 在 insertShadow 后对每个 drivable 中的车辆 leader 与 gap 信息进行更新，并更新 lane 的 historyRecord
+        flow.nextStep(interval); // 向 road 的 planRouteBuffer 中添加此时会进入的车辆
+    planRoute();                 // 主线程，待子线程处理完 route 后将有效 vehicle 转入 lane 的 waitingBuffer
+    handleWaiting();             // 对每个 lane 的 waitingBuffer 的首车，判断其是否可入 lane。如可则进入并更新 leader 与 gap；如不可，则等下一个 interval 阶段
+    if (laneChange) {            // 允许 laneChange
+        initSegments();          // 主线程，交由子线程完成 Segment 内车辆的更新
+        planLaneChange();        // 主线程，子线程判断是否可 laneChange，主线程进行 insertShadow
+        updateLeaderAndGap();    // 主线程，交由子线程更新每个 drivable 上车辆的 leader 与 gap，并更新 lane 的 historyRecord
     }
-    notifyCross();        // 多线程, 更新每个 intersection 中的 cross 的 notify信息
-    getAction();          // 多线程, 对每一个 vehicle 各类数据计算
-    updateLocation();     // 多线程, 更新 drivable 内 vehicle 信息，去除已经到达终点的 vehicle
-    updateAction();       // 多线程, 更新每个 vehicle 的信息
-    updateLeaderAndGap(); // 多线程，在移动完成后对每个 vehicle 的 leader 和 gap 进行更新
+    notifyCross();        // 主线程，交由子线程更新每个 cross 的信息
+    getAction();          // 主线程，交由子线程负责车辆数据计算
+    updateLocation();     // 主线程，交由子线程将离开的 vehicle 从原 drivable 删去并记录跑完 route 的车的数据，主线程将 vehicle 加入新 drivable
+    updateAction();       // 主线程，交由子线程对每个 vehicle 信息进行更新
+    updateLeaderAndGap(); // 主线程，交由子线程更新每个 drivable 上车辆的 leader 与 gap，并更新 lane 的 historyRecord
 
     if (!rlTrafficLight) { // 未开启 rlTrafficLight 则按导入的 trafficLight 进行交通控制
         std::vector<Intersection> &intersections = roadnet.getIntersections();
         for (auto &intersection : intersections)
-            intersection.getTrafficLight().passTime(interval);
+            intersection.getTrafficLight().passTime(interval); // trafficLight 时间调整
     }
 
     if (saveReplay) { // 保存
@@ -632,105 +636,7 @@ void Engine::nextStep() { // 执行过程
 }
 
 // RL related api
-void Engine::pushVehicle(Vehicle *const vehicle, bool pushToDrivable) {
-    size_t threadIndex = rnd() % threadNum;
-    vehiclePool.emplace(vehicle->getPriority(), std::make_pair(vehicle, threadIndex));
-    vehicleMap.emplace(vehicle->getId(), vehicle);
-    threadVehiclePool[threadIndex].insert(vehicle);
-
-    if (pushToDrivable)
-        ((Lane *)vehicle->getCurDrivable())->pushWaitingVehicle(vehicle);
-}
-
-size_t Engine::getVehicleCount() const {
-    return activeVehicleCount;
-}
-
-std::vector<std::string> Engine::getVehicles(bool includeWaiting) const {
-    std::vector<std::string> ret;
-    ret.reserve(activeVehicleCount);
-    for (const Vehicle *vehicle : getRunningVehicles(includeWaiting)) {
-        ret.emplace_back(vehicle->getId());
-    }
-    return ret;
-}
-
-std::map<std::string, int> Engine::getLaneVehicleCount() const {
-    std::map<std::string, int> ret;
-    for (const Lane *lane : roadnet.getLanes()) {
-        ret.emplace(lane->getId(), lane->getVehicleCount());
-    }
-    return ret;
-}
-
-std::map<std::string, int> Engine::getLaneWaitingVehicleCount() const {
-    std::map<std::string, int> ret;
-    for (const Lane *lane : roadnet.getLanes()) {
-        int cnt = 0;
-        for (Vehicle *vehicle : lane->getVehicles()) {
-            if (vehicle->getSpeed() < 0.1) { // TODO: better waiting critera
-                cnt += 1;
-            }
-        }
-        ret.emplace(lane->getId(), cnt);
-    }
-    return ret;
-}
-
-std::map<std::string, std::vector<std::string>> Engine::getLaneVehicles() {
-    std::map<std::string, std::vector<std::string>> ret;
-    for (const Lane *lane : roadnet.getLanes()) {
-        std::vector<std::string> vehicles;
-        for (Vehicle *vehicle : lane->getVehicles()) {
-            vehicles.push_back(vehicle->getId());
-        }
-        ret.emplace(lane->getId(), vehicles);
-    }
-    return ret;
-}
-
-std::map<std::string, double> Engine::getVehicleSpeed() const {
-    std::map<std::string, double> ret;
-    for (const Vehicle *vehicle : getRunningVehicles()) {
-        ret.emplace(vehicle->getId(), vehicle->getSpeed());
-    }
-    return ret;
-}
-
-std::map<std::string, double> Engine::getVehicleDistance() const {
-    std::map<std::string, double> ret;
-    for (const Vehicle *vehicle : getRunningVehicles()) {
-        ret.emplace(vehicle->getId(), vehicle->getDistance());
-    }
-    return ret;
-}
-
-double Engine::getCurrentTime() const {
-    return step * interval;
-}
-
-std::map<std::string, std::string> Engine::getVehicleInfo(const std::string &id) const {
-    auto iter = vehicleMap.find(id);
-    if (iter == vehicleMap.end()) {
-        throw std::runtime_error("Vehicle '" + id + "' not found");
-    } else {
-        Vehicle *vehicle = iter->second;
-        return vehicle->getInfo();
-    }
-}
-
-double Engine::getAverageTravelTime() const {
-    double tt = cumulativeTravelTime;
-    int n = finishedVehicleCnt;
-    for (auto &vehicle_pair : vehiclePool) {
-        auto &vehicle = vehicle_pair.second.first;
-        tt += getCurrentTime() - vehicle->getEnterTime();
-        n++;
-    }
-    return n == 0 ? 0 : tt / n;
-}
-
-void Engine::pushVehicle(const std::map<std::string, double> &info, const std::vector<std::string> &roads) {
+void Engine::pushVehicle(const std::map<std::string, double> &info, const std::vector<std::string> &roads) { // 手动添加车辆
     VehicleInfo vehicleInfo;
     std::map<std::string, double>::const_iterator it;
     if ((it = info.find("speed")) != info.end())
@@ -766,7 +672,95 @@ void Engine::pushVehicle(const std::map<std::string, double> &info, const std::v
     vehicle->getFirstRoad()->addPlanRouteVehicle(vehicle);
 }
 
-void Engine::setTrafficLightPhase(const std::string &id, int phaseIndex) {
+size_t Engine::getVehicleCount() const { // 行驶中车辆数获取
+    return activeVehicleCount;
+}
+
+std::vector<std::string> Engine::getVehicles(bool includeWaiting) const { // 车辆 id 获取
+    std::vector<std::string> ret;
+    ret.reserve(activeVehicleCount);
+    for (const Vehicle *vehicle : getRunningVehicles(includeWaiting)) {
+        ret.emplace_back(vehicle->getId());
+    }
+    return ret;
+}
+
+std::map<std::string, int> Engine::getLaneVehicleCount() const { // 各 lane 中车辆数获取 <id, number>
+    std::map<std::string, int> ret;
+    for (const Lane *lane : roadnet.getLanes()) {
+        ret.emplace(lane->getId(), lane->getVehicleCount());
+    }
+    return ret;
+}
+
+std::map<std::string, int> Engine::getLaneWaitingVehicleCount() const { // 各 lane 中等待车辆数获取 <id, number>
+    std::map<std::string, int> ret;
+    for (const Lane *lane : roadnet.getLanes()) {
+        int cnt = 0;
+        for (Vehicle *vehicle : lane->getVehicles()) {
+            if (vehicle->getSpeed() < 0.1) { // TODO: better waiting critera
+                cnt += 1;
+            }
+        }
+        ret.emplace(lane->getId(), cnt);
+    }
+    return ret;
+}
+
+std::map<std::string, std::vector<std::string>> Engine::getLaneVehicles() { // 各 lane 中等待车辆获取 <id, vector<id> >
+    std::map<std::string, std::vector<std::string>> ret;
+    for (const Lane *lane : roadnet.getLanes()) {
+        std::vector<std::string> vehicles;
+        for (Vehicle *vehicle : lane->getVehicles()) {
+            vehicles.push_back(vehicle->getId());
+        }
+        ret.emplace(lane->getId(), vehicles);
+    }
+    return ret;
+}
+
+std::map<std::string, double> Engine::getVehicleSpeed() const { // 车辆速度获取 <id, speed>
+    std::map<std::string, double> ret;
+    for (const Vehicle *vehicle : getRunningVehicles()) {
+        ret.emplace(vehicle->getId(), vehicle->getSpeed());
+    }
+    return ret;
+}
+
+std::map<std::string, double> Engine::getVehicleDistance() const { // 车辆距所在 drivable 起点距离获取 <id, lane>
+    std::map<std::string, double> ret;
+    for (const Vehicle *vehicle : getRunningVehicles()) {
+        ret.emplace(vehicle->getId(), vehicle->getDistance());
+    }
+    return ret;
+}
+
+double Engine::getCurrentTime() const { // 当前时间
+    return step * interval;
+}
+
+std::map<std::string, std::string> Engine::getVehicleInfo(const std::string &id) const { // 对应 id 车辆信息获取 <title, info>
+    auto iter = vehicleMap.find(id);                                                     // 含 running、distance、speed、
+    if (iter == vehicleMap.end()) {                                                      // drivable、road、intersection、route
+        throw std::runtime_error("Vehicle '" + id + "' not found");
+    } else {
+        Vehicle *vehicle = iter->second;
+        return vehicle->getInfo();
+    }
+}
+
+double Engine::getAverageTravelTime() const { // 车辆跑完 route 平均时间
+    double tt = cumulativeTravelTime;
+    int n = finishedVehicleCnt;
+    for (auto &vehicle_pair : vehiclePool) {
+        auto &vehicle = vehicle_pair.second.first;
+        tt += getCurrentTime() - vehicle->getEnterTime();
+        n++;
+    }
+    return n == 0 ? 0 : tt / n;
+}
+
+void Engine::setTrafficLightPhase(const std::string &id, int phaseIndex) { // 设置某 intersection 当前信号灯阶段
     if (!rlTrafficLight) {
         std::cerr << "please set rlTrafficLight to true to enable traffic light control" << std::endl;
         return;
@@ -774,7 +768,7 @@ void Engine::setTrafficLightPhase(const std::string &id, int phaseIndex) {
     roadnet.getIntersectionById(id)->getTrafficLight().setPhase(phaseIndex);
 }
 
-void Engine::setReplayLogFile(const std::string &logFile) {
+void Engine::setReplayLogFile(const std::string &logFile) { // 设置 logOut 输出流指向的文件
     if (!saveReplayInConfig) {
         std::cerr << "saveReplay is not set to true in config file!" << std::endl;
         return;
@@ -784,7 +778,7 @@ void Engine::setReplayLogFile(const std::string &logFile) {
     logOut.open(dir + logFile);
 }
 
-void Engine::setSaveReplay(bool open) {
+void Engine::setSaveReplay(bool open) { // 设置保存
     if (!saveReplayInConfig) {
         std::cerr << "saveReplay is not set to true in config file!" << std::endl;
         return;
@@ -792,7 +786,7 @@ void Engine::setSaveReplay(bool open) {
     saveReplay = open;
 }
 
-void Engine::reset(bool resetRnd) {
+void Engine::reset(bool resetRnd) { // 清空
     for (auto &vehiclePair : vehiclePool)
         delete vehiclePair.second.first;
     for (auto &pool : threadVehiclePool)
@@ -820,7 +814,7 @@ void Engine::setLogFile(const std::string &jsonFile, const std::string &logFile)
     logOut.open(logFile);
 }
 
-std::vector<const Vehicle *> Engine::getRunningVehicles(bool includeWaiting) const {
+std::vector<const Vehicle *> Engine::getRunningVehicles(bool includeWaiting) const { // 获取车辆信息
     std::vector<const Vehicle *> ret;
     ret.reserve(activeVehicleCount);
     for (const auto &vehiclePair : vehiclePool) {
@@ -832,7 +826,7 @@ std::vector<const Vehicle *> Engine::getRunningVehicles(bool includeWaiting) con
     return ret;
 }
 
-void Engine::setVehicleSpeed(const std::string &id, double speed) {
+void Engine::setVehicleSpeed(const std::string &id, double speed) { // 设置某车 customSpeed
     auto iter = vehicleMap.find(id);
     if (iter == vehicleMap.end()) {
         throw std::runtime_error("Vehicle '" + id + "' not found");
@@ -841,7 +835,7 @@ void Engine::setVehicleSpeed(const std::string &id, double speed) {
     }
 }
 
-std::string Engine::getLeader(const std::string &vehicleId) const {
+std::string Engine::getLeader(const std::string &vehicleId) const { // 获取前车，如为 shadow 则找原车的前车
     auto iter = vehicleMap.find(vehicleId);
     if (iter == vehicleMap.end()) {
         throw std::runtime_error("Vehicle '" + vehicleId + "' not found");
@@ -868,7 +862,7 @@ Engine::~Engine() {
         endBarrier.wait();
     }
     for (auto &thread : threadPool)
-        thread.join();
+        thread.join(); // 线程同步
     for (auto &vehiclePair : vehiclePool)
         delete vehiclePair.second.first;
 }

@@ -4,9 +4,9 @@
 namespace CityFlow {
 
 void TrafficLight::init(int initPhaseIndex) {
-    if (intersection->isVirtual)
+    if (intersection->isVirtual) // 边缘路口无 trafficLight
         return;
-    this->curPhaseIndex = initPhaseIndex;
+    this->curPhaseIndex = initPhaseIndex; // 开始时处于 initPhaseIndex 阶段
     this->remainDuration = phases[initPhaseIndex].time;
 }
 
@@ -26,7 +26,7 @@ std::vector<LightPhase> &TrafficLight::getPhases() {
     return phases;
 }
 
-void TrafficLight::passTime(double seconds) {
+void TrafficLight::passTime(double seconds) { // 信号灯时间修改
     if (intersection->isVirtual)
         return;
     remainDuration -= seconds;

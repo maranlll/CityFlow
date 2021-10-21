@@ -388,7 +388,7 @@ rapidjson::Value RoadNet::convertToJson(rapidjson::Document::AllocatorType &allo
     return jsonRoot;
 }
 
-Point Drivable::getPointByDistance(double dis) const { // points 组成的路径的长度
+Point Drivable::getPointByDistance(double dis) const { // 找到沿 points 路径距离起点 dis 长度的 point
     return CityFlow::getPointByDistance(points, dis);
 }
 
@@ -420,7 +420,7 @@ Lane::Lane(double width, double maxSpeed, int laneIndex, Road *belongRoad) {
     drivableType = LANE;
 }
 
-bool Lane::available(const Vehicle *vehicle) const { // 是否可由 buffer 进入 lane
+bool Lane::available(const Vehicle *vehicle) const { // lane 内是否有空余空间
     if (!vehicles.empty()) {
         Vehicle *tail = vehicles.back();
         return tail->getDistance() > tail->getLen() + vehicle->getMinGap();
@@ -429,7 +429,7 @@ bool Lane::available(const Vehicle *vehicle) const { // 是否可由 buffer 进�
     }
 }
 
-bool Lane::canEnter(const Vehicle *vehicle) const { // 是否可以进入此 lane
+bool Lane::canEnter(const Vehicle *vehicle) const { // 是否可由 waitingBuffer 进入 lane
     if (!vehicles.empty()) {
         Vehicle *tail = vehicles.back();
         return tail->getDistance() > tail->getLen() + vehicle->getLen() || tail->getSpeed() >= 2; // todo: speed > 2 or?
@@ -506,7 +506,7 @@ const std::vector<Lane *> &Road::getLanePointers() {
     return lanePointers;
 }
 
-void Intersection::initCrosses() { // 初始化每个 laneLink 的 cross
+void Intersection::initCrosses() { // 初始化生成 cross
     std::vector<LaneLink *> allLaneLinks;
     for (auto &roadLink : roadLinks) {
         for (auto &laneLink : roadLink.getLaneLinks())
@@ -668,7 +668,7 @@ bool Cross::canPass(const Vehicle *vehicle, const LaneLink *laneLink,
         while (fastPointer != nullptr && fastPointer->getBlocker() != nullptr) {
             slowPointer = slowPointer->getBlocker();
             fastPointer = fastPointer->getBlocker()->getBlocker();
-            if (slowPointer == fastPointer) { // 成环死锁
+            if (slowPointer == fastPointer) { // foeVehicle 存在死锁
                 // deadlock detected
                 yield = -1; // foeVehicle 死锁不可动，当前 Vehicle 通行
                 break;
@@ -690,7 +690,7 @@ void Road::reset() {
         lane.reset();
 }
 
-void Road::buildSegmentationByInterval(double interval) {
+void Road::buildSegmentationByInterval(double interval) { // 按每段 segment 长度为 interval 建段
     size_t numSegs = std::max((size_t)ceil(getLengthOfPoints(this->points) / interval), (size_t)1);
     for (Lane &lane : lanes)
         lane.buildSegmentation(numSegs);
@@ -757,8 +757,7 @@ void Intersection::reset() {
         cross.reset();
 }
 
-std::vector<Point> Intersection::getOutline() { // ?
-    // Calculate the convex hull as the outline of the intersection
+std::vector<Point> Intersection::getOutline() { // Calculate the convex hull as the outline of the intersection
     std::vector<Point> points;
     points.push_back(getPosition());
     for (auto road : getRoads()) {
@@ -825,7 +824,7 @@ std::vector<Point> Intersection::getOutline() { // ?
     return stack;
 }
 
-bool Intersection::isImplicitIntersection() {
+bool Intersection::isImplicitIntersection() { // 是否是仅有一种可通行方式的隐式路口
     return trafficLight.getPhases().size() <= 1;
 }
 
@@ -843,7 +842,8 @@ void Lane::reset() {
     vehicles.clear();
 }
 
-std::vector<Vehicle *> Lane::getVehiclesBeforeDistance(double dis, size_t segmentIndex, double deltaDis) {
+std::vector<Vehicle *> Lane::getVehiclesBeforeDistance(double dis, size_t segmentIndex,
+                                                       double deltaDis) { // 从 segment[segmentIndex] 的 endPos 向 deltaDis 内的车
     std::vector<Vehicle *> ret;
     for (int i = segmentIndex; i >= 0; i--) {
         Segment *segment = getSegment(i);
@@ -859,7 +859,7 @@ std::vector<Vehicle *> Lane::getVehiclesBeforeDistance(double dis, size_t segmen
     return ret;
 }
 
-void Lane::buildSegmentation(size_t numSegs) {
+void Lane::buildSegmentation(size_t numSegs) { // 在 lane 上建 numSegs 个 segment
     this->segments.resize((unsigned)numSegs);
     for (size_t i = 0; i < numSegs; i++) {
         segments[i].index = i;
@@ -884,7 +884,7 @@ void Lane::initSegments() { // 由 lane 中的 vehicle 的 dis 更新每个 segm
     }
 }
 
-Vehicle *Lane::getVehicleBeforeDistance(double dis, size_t segmentIndex) const {
+Vehicle *Lane::getVehicleBeforeDistance(double dis, size_t segmentIndex) const { // 从 segment[segmentIndex] 向前距起点距离小于 dis 的第一辆车
     for (int i = segmentIndex; i >= 0; --i) {
         auto vehs = getSegment(i)->getVehicles();
         for (auto itr = vehs.begin(); itr != vehs.end(); ++itr) {
@@ -897,7 +897,7 @@ Vehicle *Lane::getVehicleBeforeDistance(double dis, size_t segmentIndex) const {
     return nullptr;
 }
 
-Vehicle *Lane::getVehicleAfterDistance(double dis, size_t segmentIndex) const {
+Vehicle *Lane::getVehicleAfterDistance(double dis, size_t segmentIndex) const { // 从 segment[segmentIndex] 向后距起点距离大于 dis 的第一辆车
     for (size_t i = segmentIndex; i < getSegmentNum(); ++i) {
         auto vehs = getSegment(i)->getVehicles();
         for (auto itr = vehs.rbegin(); itr != vehs.rend(); ++itr) {
@@ -909,7 +909,7 @@ Vehicle *Lane::getVehicleAfterDistance(double dis, size_t segmentIndex) const {
     return nullptr;
 }
 
-void Lane::updateHistory() {
+void Lane::updateHistory() { // 更新 historyRecord
     double speedSum = historyVehicleNum * historyAverageSpeed;
     while (history.size() > historyLen) {
         historyVehicleNum -= history.front().vehicleNum;

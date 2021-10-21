@@ -12,21 +12,20 @@ Router::Router(const Router &other) : vehicle(other.vehicle), route(other.route)
     iCurRoad = this->route.begin();
 }
 
-Router::Router(Vehicle *vehicle, std::shared_ptr<const Route> route, std::mt19937 *rnd)
-    : vehicle(vehicle), anchorPoints(route->getRoute()), rnd(rnd) {
+Router::Router(Vehicle *vehicle, std::shared_ptr<const Route> route, std::mt19937 *rnd) : vehicle(vehicle), anchorPoints(route->getRoute()), rnd(rnd) {
     assert(this->anchorPoints.size() > 0);
     this->route = route->getRoute();
     iCurRoad = this->route.begin();
 }
 
-Drivable *Router::getFirstDrivable() const {
+Drivable *Router::getFirstDrivable() const { // 进入 route[0] 应选的 drivable
     const std::vector<Lane *> &lanes = route[0]->getLanePointers();
     if (route.size() == 1) {               // 仅 1 road
         return selectLane(nullptr, lanes); // 随机选 lane
     } else {
         std::vector<Lane *> candidateLanes;
         for (auto lane : lanes) {
-            if (lane->getLaneLinksToRoad(route[1]).size() > 0) { // 选择能驶向 route[1] 的 laneLink 的 lane
+            if (lane->getLaneLinksToRoad(route[1]).size() > 0) { // 选择拥有由 route[0] 驶向 route[1] 的 laneLink 的 lane
                 candidateLanes.push_back(lane);
             }
         }
@@ -35,7 +34,7 @@ Drivable *Router::getFirstDrivable() const {
     }
 }
 
-Drivable *Router::getNextDrivable(size_t i) const { // 后续将走的 drivable
+Drivable *Router::getNextDrivable(size_t i) const { // 下 i + 1 步将走的 drivable
     if (i < planned.size()) {                       // 已计算
         return planned[i];
     } else {                                                                                          // 未事先计算
@@ -51,7 +50,7 @@ Drivable *Router::getNextDrivable(const Drivable *curDrivable) const { // 由当
     } else { // 当前是 lane
         const Lane *curLane = static_cast<const Lane *>(curDrivable);
         auto tmpCurRoad = iCurRoad;
-        while ((*tmpCurRoad) != curLane->getBelongRoad() && tmpCurRoad != route.end()) { // 更新 iCurRoad
+        while ((*tmpCurRoad) != curLane->getBelongRoad() && tmpCurRoad != route.end()) { // 找到 curDrivable 对应的 CurRoad
             tmpCurRoad++;
         }
         assert(tmpCurRoad != route.end() && curLane->getBelongRoad() == (*tmpCurRoad));
@@ -59,8 +58,8 @@ Drivable *Router::getNextDrivable(const Drivable *curDrivable) const { // 由当
             return nullptr;
         } else if (tmpCurRoad == route.end() - 2) { // route 内倒数第二 road
             std::vector<LaneLink *> laneLinks = curLane->getLaneLinksToRoad(*(tmpCurRoad + 1));
-            return selectLaneLink(curLane, laneLinks); // 走向可选 laneLink 的 endLane 中距离 curlane 最近的 lane
-        } else {                                       // 选取的 laneLink 需能确保到达 route 的再下一个 road
+            return selectLaneLink(curLane, laneLinks);                                          // 走向可选 laneLink 的 endLane 中距离 curlane 最近的 lane
+        } else {                                                                                // 选取的 laneLink 需能确保到达 route 的再下一个 road
             std::vector<LaneLink *> laneLinks = curLane->getLaneLinksToRoad(*(tmpCurRoad + 1)); // 由 route[i] 到 route[i+1] 的 laneLink
             std::vector<LaneLink *> candidateLaneLinks;
             for (auto laneLink : laneLinks) {
@@ -92,7 +91,7 @@ void Router::update() { // 更新 iCurRoad 与 planned
     }
 }
 
-int Router::selectLaneIndex(const Lane *curLane, const std::vector<Lane *> &lanes) const { // 根据当前 lane 在备选区选下一个 lane 的 编号
+int Router::selectLaneIndex(const Lane *curLane, const std::vector<Lane *> &lanes) const { // 根据当前 lane 在备选区选下一个 lane 的编号
     assert(lanes.size() > 0);
     if (curLane == nullptr) { // 当前未入 lane，随机选择备选 lane
         return (*rnd)() % lanes.size();
@@ -117,8 +116,7 @@ Lane *Router::selectLane(const Lane *curLane, const std::vector<Lane *> &lanes) 
     return lanes[selectLaneIndex(curLane, lanes)];
 }
 
-LaneLink *Router::selectLaneLink(const Lane *curLane,
-                                 const std::vector<LaneLink *> &laneLinks) const { // 根据当前 lane 在 laneLink 备选区的 endline 内选下一个 lane
+LaneLink *Router::selectLaneLink(const Lane *curLane, const std::vector<LaneLink *> &laneLinks) const { // 根据当前 lane 在 laneLink 备选区的 endline 内选下一个 lane
     if (laneLinks.size() == 0) {
         return nullptr;
     }
@@ -139,7 +137,7 @@ bool Router::onLastRoad() const {
     return isLastRoad(vehicle->getCurDrivable());
 }
 
-Lane *Router::getValidLane(const Lane *curLane) const { // 可选的 lanechange
+Lane *Router::getValidLane(const Lane *curLane) const { // 选取从 curLane 走向下一个 Road 时 laneIndex 差距最小的 lane
     if (isLastRoad(curLane))
         return nullptr;
     auto nextRoad = iCurRoad;
@@ -227,7 +225,7 @@ bool Router::dijkstra(Road *start, Road *end, std::vector<Road *> &buffer) { // 
     return success;
 }
 
-bool Router::updateShortestPath() { // 更新 route 为 经过 anchorpoint 各路的最短路
+bool Router::updateShortestPath() { // 更新 route 为经过 anchorpoint 各路的最短路
     // Dijkstra
     planned.clear();
     route.clear();
@@ -244,7 +242,7 @@ bool Router::updateShortestPath() { // 更新 route 为 经过 anchorpoint 各�
     return true;
 }
 
-bool Router::setRoute(const std::vector<Road *> &anchor) {
+bool Router::setRoute(const std::vector<Road *> &anchor) { // 修改后续需走的路径为 anchor
     if (vehicle->getCurDrivable()->isLaneLink())
         return false;
     Road *cur_road = *iCurRoad;
@@ -254,9 +252,9 @@ bool Router::setRoute(const std::vector<Road *> &anchor) {
     anchorPoints.emplace_back(cur_road);
     anchorPoints.insert(anchorPoints.end(), anchor.begin(), anchor.end());
     bool result = updateShortestPath();
-    if (result && onValidLane()) {
+    if (result && onValidLane()) { // 有效修改
         return true;
-    } else {
+    } else { // 恢复原数据
         anchorPoints = std::move(backup);
         route = std::move(backup_route);
         planned.clear();
@@ -267,7 +265,7 @@ bool Router::setRoute(const std::vector<Road *> &anchor) {
     }
 }
 
-std::vector<Road *> Router::getFollowingRoads() const {
+std::vector<Road *> Router::getFollowingRoads() const { // 获取未来将走的所有 Road
     std::vector<Road *> ret;
     ret.insert(ret.end(), iCurRoad, route.end());
     return ret;

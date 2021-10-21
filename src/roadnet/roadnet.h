@@ -25,8 +25,8 @@ class Segment {
   private:
     size_t index = 0;                                   // 当前 Segment 的编号
     Lane *belongLane = nullptr;                         // Segment 所属的 lane
-    double startPos = 0;                                // lane 上的起点 dis
-    double endPos = 0;                                  // lane 上的终点 dis
+    double startPos = 0;                                // segment 在 lane 上的起点 dis
+    double endPos = 0;                                  // segment 在 lane 上的终点 dis
     std::list<std::list<Vehicle *>::iterator> vehicles; // Segment 上的车辆，指向 Lane 的父类 Dirvable 的 vehicles 中的一段
     std::list<Vehicle *>::iterator prev_vehicle_iter;   // 指向车辆的迭代器
 
@@ -76,16 +76,16 @@ class Intersection {
 
   private:
     std::string id; // intersection id
-    bool isVirtual; // ??
+    bool isVirtual; // 边界路口 ??
     double width = 0.0;
-    Point point; // position
-    TrafficLight trafficLight;
+    Point point;                       // position
+    TrafficLight trafficLight;         // 信号集
     std::vector<Road *> roads;         // 连接的 road（指针版），原对象存储于 RoadNet
     std::vector<RoadLink> roadLinks;   // 可通行的 roadLinks
     std::vector<Cross> crosses;        // laneLink 产生的交叉点集
     std::vector<LaneLink *> laneLinks; // 可通行的 laneLinks， 原对象存储于 RoadLink
 
-    void initCrosses();
+    void initCrosses(); // loadFromJson 时调用
 
   public:
     std::string getId() const {
@@ -126,11 +126,11 @@ class Intersection {
 
     const std::vector<LaneLink *> &getLaneLinks();
 
-    void reset();
+    void reset(); // 全部清空重置
 
-    std::vector<Point> getOutline();
+    std::vector<Point> getOutline(); // Calculate the convex hull as the outline of the intersection
 
-    bool isImplicitIntersection();
+    bool isImplicitIntersection(); // 是否是仅有一种可通行方式的隐式路口
 
     const Point &getPosition() const {
         return point;
@@ -143,9 +143,9 @@ class Cross {
     friend class Intersection;
 
   private:
-    LaneLink *laneLinks[2];                        // 两条穿过路口的 laneLink 形成 cross
+    LaneLink *laneLinks[2];                        // intersection 的两条 laneLink 相交形成 cross
     Vehicle *notifyVehicles[2];                    // 每个 cross 中可能冲突的车
-    double notifyDistances[2];                     // <0 表示在 cross 后，>0 表示在 cross 前，距离 cross 的距离
+    double notifyDistances[2];                     // <0 表示在 cross 前，>0 表示在 cross 后，距离 cross 的距离
     double distanceOnLane[2];                      // 交叉点距离 laneLink 起点的距离
     double leaveDistance = 0, arriveDistance = 30; // TODO
     double ang;                                    // 夹角的弧度
@@ -162,8 +162,9 @@ class Cross {
 
     void notify(LaneLink *laneLink, Vehicle *vehicle, double notifyDistance); // notify all the crosspoint of its arrival
 
-    bool canPass(const Vehicle *vehicle, const LaneLink *laneLink,
-                 double distanceToLaneLinkStart) const; // XXX: change to LaneLink based?
+    bool canPass(
+        const Vehicle *vehicle, const LaneLink *laneLink,
+        double distanceToLaneLinkStart) const; // XXX: change to LaneLink based? 当前车辆是否可以在距离 laneLink start dis 处不停车通过 intersection
 
     void clearNotify() {
         notifyVehicles[0] = notifyVehicles[1] = nullptr;
@@ -174,13 +175,13 @@ class Cross {
         return laneLink == laneLinks[0] ? notifyVehicles[1] : notifyVehicles[0];
     }
 
-    double getDistanceByLane(const LaneLink *laneLink) const {
+    double getDistanceByLane(const LaneLink *laneLink) const { // 距 laneLink start 的距离
         // XXX: lanelink not in cross?
         assert(laneLink == laneLinks[0] || laneLink == laneLinks[1]);
         return laneLink == laneLinks[0] ? distanceOnLane[0] : distanceOnLane[1];
     }
 
-    double getNotifyDistanceByLane(LaneLink *laneLink) const {
+    double getNotifyDistanceByLane(LaneLink *laneLink) const { // 在 laneLink 上距 cross 的距离，<0 表示已过 cross，>0 表示未过 cross
         // XXX: lanelink not in cross?
         assert(laneLink == laneLinks[0] || laneLink == laneLinks[1]);
         return laneLink == laneLinks[0] ? notifyDistances[0] : notifyDistances[1];
@@ -241,7 +242,7 @@ class Road {
 
     const std::vector<Lane *> &getLanePointers();
 
-    void buildSegmentationByInterval(double interval); // 建立 Segment
+    void buildSegmentationByInterval(double interval); // 按每段 segment 长度为 interval 建段
 
     bool connectedToRoad(const Road *road) const;
 
@@ -261,7 +262,7 @@ class Road {
         return planRouteBuffer;
     }
 
-    void addPlanRouteVehicle(Vehicle *vehicle) {
+    void addPlanRouteVehicle(Vehicle *vehicle) { // 向 planRouteBuffer 内加入 vehicle
         planRouteBuffer.emplace_back(vehicle);
     }
 
@@ -337,9 +338,9 @@ class Drivable {
         return nullptr;
     }
 
-    Point getPointByDistance(double dis) const;
+    Point getPointByDistance(double dis) const; // 距起点 dis 距离的坐标
 
-    Point getDirectionByDistance(double dis) const;
+    Point getDirectionByDistance(double dis) const; // 距起点 dis 距离的单位方向向量
 
     void pushVehicle(Vehicle *vehicle) {
         vehicles.push_back(vehicle);
@@ -372,8 +373,8 @@ class Lane : public Drivable {
     };
     std::list<HistoryRecord> history; // lane 车流信息记录
 
-    int historyVehicleNum = 0;
-    double historyAverageSpeed = 0;
+    int historyVehicleNum = 0;      // 当前的 vehicleNum
+    double historyAverageSpeed = 0; // 当前的平均速度
 
     static constexpr int historyLen = 240; // 最大可容纳的记录
 
@@ -390,19 +391,19 @@ class Lane : public Drivable {
         return this->belongRoad;
     }
 
-    bool available(const Vehicle *vehicle) const; // 车是否可以从此 Lane 走?
+    bool available(const Vehicle *vehicle) const; // lane 内是否有空余空间
 
-    bool canEnter(const Vehicle *vehicle) const;
+    bool canEnter(const Vehicle *vehicle) const; // 是否可由 waitingBuffer 进入 lane
 
     size_t getLaneIndex() const {
         return this->laneIndex;
     }
 
-    Lane *getInnerLane() const {
+    Lane *getInnerLane() const { // 里侧的 lane
         return laneIndex > 0 ? &(belongRoad->lanes[laneIndex - 1]) : nullptr;
     }
 
-    Lane *getOuterLane() const {
+    Lane *getOuterLane() const { // 外侧的 lane
         int lane_num = belongRoad->lanes.size();
         return laneIndex < lane_num - 1 ? &(belongRoad->lanes[laneIndex + 1]) : nullptr;
     }
@@ -441,9 +442,9 @@ class Lane : public Drivable {
     }
 
     /* segmentation */
-    void buildSegmentation(size_t numSegs);
+    void buildSegmentation(size_t numSegs); // 在 lane 上建 numSegs 个 segment
 
-    void initSegments();
+    void initSegments(); // 由 lane 中的 vehicle 的 dis 更新每个 segment 内的车辆信息
 
     const Segment *getSegment(size_t index) const {
         return &segments[index];
@@ -465,18 +466,20 @@ class Lane : public Drivable {
         return segments.size();
     }
 
-    std::vector<Vehicle *> getVehiclesBeforeDistance(double dis, size_t segmentIndex, double deltaDis = 50);
+    std::vector<Vehicle *> getVehiclesBeforeDistance(double dis, size_t segmentIndex,
+                                                     double deltaDis = 50); // 从 segment[segmentIndex] 的 endPos 向 deltaDis 内的车
 
     /* history */
-    void updateHistory();
+    void updateHistory(); // 更新 histoyRecord
 
     int getHistoryVehicleNum() const;
 
     double getHistoryAverageSpeed() const;
 
-    Vehicle *getVehicleBeforeDistance(double dis, size_t segmentIndex) const; // TODO: set a limit, not too far way
+    Vehicle *getVehicleBeforeDistance(
+        double dis, size_t segmentIndex) const; // TODO: set a limit, not too far way 从 segment[segmentIndex] 向前距起点距离小于 dis 的第一辆车
 
-    Vehicle *getVehicleAfterDistance(double dis, size_t segmentIndex) const;
+    Vehicle *getVehicleAfterDistance(double dis, size_t segmentIndex) const; // 从 segment[segmentIndex] 向后距起点距离大于 dis 的第一辆车
 };
 
 enum RoadLinkType { go_straight = 3, turn_left = 2, turn_right = 1 };
@@ -567,7 +570,7 @@ class LaneLink : public Drivable {
         return endLane;
     }
 
-    bool isAvailable() const {
+    bool isAvailable() const { // 当前信号灯可通行过路口
         return roadLink->isAvailable();
     }
 

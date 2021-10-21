@@ -30,7 +30,7 @@ struct VehicleInfo {            // 车辆预设信息
     double minGap = 2;          // 与前车最小间距
     double maxSpeed = 16.66667; // 最大速度
     double headwayTime = 1;
-    double yieldDistance = 5;                     // 让步距离
+    double yieldDistance = 5;                     // 让步距离（如果减速让别人过则与交叉点应有的距离）
     double turnSpeed = 8.3333;                    // 转弯速度
     std::shared_ptr<const Route> route = nullptr; // 路径
 };
@@ -56,30 +56,30 @@ class Vehicle {
         double speed;       // 在 drivable 上行驶的速度
         Drivable *drivable; // 新的 drivable
         std::vector<Vehicle *> notifiedVehicles;
-        bool end;                   // 是否完成当前操作
+        bool end;                   // 是否到达终点 / finishChange / abortChange
         size_t enterLaneLinkTime;   // 进入 LaneLink 的时间
         Vehicle *blocker = nullptr; // 被 blocker block
-        double customSpeed;
-        double deltaDis; // ？
+        double customSpeed;         // api 设置
+        double deltaDis;            // 上次前进距离
     };
-    struct LaneChangeInfo {    // 换路控制
+    struct LaneChangeInfo {    // laneChange 中自身相关信息记录
         short partnerType = 0; // 0 for no partner; 1 for real vehicle; 2 for shadow vehicle;
         Vehicle *partner = nullptr;
-        double offset = 0;
-        size_t segmentIndex = 0;
+        double offset = 0;       // 偏移量，大于 maxOffset 说明已开到下一 lane 完成 laneChange
+        size_t segmentIndex = 0; // 所在 segmentIndex
     };
-    struct ControllerInfo {               // 车辆行驶信息？
-        double dis = 0;                   // 当前 drivable 上形式的距离
-        Drivable *drivable = nullptr;     // 当前所在的 drivable
-        Drivable *prevDrivable = nullptr; // 上一个 drivable
-        double approachingIntersectionDistance;
-        double gap;                 // 与 leader 间的距离
-        size_t enterLaneLinkTime;   // 如果当前所在 drivable 为 laneLink, 则为进入的时间；否则为 理论最值
-        Vehicle *leader = nullptr;  // 前车
-        Vehicle *blocker = nullptr; // 在 cross 处受 blocker 阻碍
-        bool end = false;           // 是否已完成 router
-        bool running = false;       // 正在运行
-        Router router;              // 总体路径信息控制与记录
+    struct ControllerInfo {                     // 当前车辆行驶信息
+        double dis = 0;                         // 当前 drivable 上形式的距离
+        Drivable *drivable = nullptr;           // 当前所在的 drivable
+        Drivable *prevDrivable = nullptr;       // 上一个 drivable
+        double approachingIntersectionDistance; // 与 intersection 距离小于此值使判定为接近 intersection
+        double gap;                             // 与 leader 间的距离
+        size_t enterLaneLinkTime;               // 如果当前所在 drivable 为 laneLink, 则为进入的时间；否则为 理论最值
+        Vehicle *leader = nullptr;              // 前车
+        Vehicle *blocker = nullptr;             // 在 cross 处受 blocker 阻碍
+        bool end = false;                       // 是否到达终点 / finishChange / abortChange
+        bool running = false;                   // 正在行驶
+        Router router;                          // 总体路径信息控制与记录
         ControllerInfo(Vehicle *vehicle, std::shared_ptr<const Route> route, std::mt19937 *rnd);
         ControllerInfo(Vehicle *vehicle, const ControllerInfo &other);
     };
@@ -89,7 +89,7 @@ class Vehicle {
     LaneChangeInfo laneChangeInfo;
     ControllerInfo controllerInfo;
 
-    int priority;     // 独有，用于 VehiclePool
+    int priority;     // 独有优先级，用于 VehiclePool
     std::string id;   // flow_i_j，用于 VehicleMap
     double enterTime; // 由 Flow 创建的时间，即进入 RoadNet 的时间
 
@@ -109,11 +109,14 @@ class Vehicle {
 
     Vehicle(const VehicleInfo &init, const std::string &id, Engine *engine, Flow *flow = nullptr);
 
-    void setDeltaDistance(double dis);
+    void update(); // buffer 信息传入 controllerInfo
+
+    // set / get
+    void setDeltaDistance(double dis); // 由 dis 算出当前在哪条 drivable 上并更新 buffer
 
     void setSpeed(double speed);
 
-    void setCustomSpeed(double speed) {
+    void setCustomSpeed(double speed) { // 设置 CustomSpeed，仅由 RL api 调用
         buffer.customSpeed = speed;
         buffer.isCustomSpeedSet = true;
     }
@@ -175,8 +178,6 @@ class Vehicle {
         return buffer.dis;
     }
 
-    void update();
-
     void setPriority(int priority) {
         this->priority = priority;
     }
@@ -201,7 +202,7 @@ class Vehicle {
         return controllerInfo.dis;
     }
 
-    Point getPoint() const;
+    Point getPoint() const; // 获取 vehicle 当前坐标
 
     inline double getMaxPosAcc() const {
         return vehicleInfo.maxPosAcc;
@@ -260,11 +261,11 @@ class Vehicle {
         return priority;
     }
 
-    std::pair<Point, Point> getCurPos() const;
+    std::pair<Point, Point> getCurPos() const; // 获取 vehicle 头尾坐标
 
-    ControlInfo getNextSpeed(double interval);
+    ControlInfo getNextSpeed(double interval); //求解 interval 后的速度
 
-    Drivable *getChangedDrivable() const;
+    Drivable *getChangedDrivable() const; // 如 drivable 改变则返回新的 drivable
 
     double getEnterTime() const {
         return enterTime;
@@ -274,33 +275,33 @@ class Vehicle {
         return controllerInfo.end;
     }
 
-    bool isIntersectionRelated();
+    bool isIntersectionRelated(); // 是否已在 intersection 或将进入 intersection
 
-    double getBrakeDistanceAfterAccel(double acc, double dec, double interval) const;
+    double getBrakeDistanceAfterAccel(double acc, double dec, double interval) const; // 在加速 interval 时间后减速到 0 需要的距离
 
     inline double getMinBrakeDistance() const { // 减速到 0 最短距离
         return 0.5 * vehicleInfo.speed * vehicleInfo.speed / vehicleInfo.maxNegAcc;
     }
 
-    inline double getUsualBrakeDistance() const {
+    inline double getUsualBrakeDistance() const { // 常规减速到 0 所需距离
         return 0.5 * vehicleInfo.speed * vehicleInfo.speed / vehicleInfo.usualNegAcc;
     }
 
-    double getNoCollisionSpeed(double vL, double dL, double vF, double dF, double gap, double interval, double targetGap) const;
+    double getNoCollisionSpeed(double vL, double dL, double vF, double dF, double gap, double interval, double targetGap) const; // 在给定数据下减速使最终距离为 targetGap，减速 interval 时间后的速度
 
-    double getCarFollowSpeed(double interval);
+    double getCarFollowSpeed(double interval); // 跟随速度
 
-    double getStopBeforeSpeed(double distance, double interval) const;
+    double getStopBeforeSpeed(double distance, double interval) const; // 能在 distance 内停下时经过 interval 时间后的速度
 
-    int getReachSteps(double distance, double targetSpeed, double acc) const;
+    int getReachSteps(double distance, double targetSpeed, double acc) const; // 在 distance 内加速到 targetSpeed 所用时间段
 
-    int getReachStepsOnLaneLink(double distance, LaneLink *laneLink) const;
+    int getReachStepsOnLaneLink(double distance, LaneLink *laneLink) const; // 在 laneLink 上以最大可能行驶 distance 所用时间段
 
-    double getDistanceUntilSpeed(double speed, double acc) const;
+    double getDistanceUntilSpeed(double speed, double acc) const; // 以 acc 加速度加速到 speed 所需距离
 
-    bool canYield(double dist) const;
+    bool canYield(double dist) const; // 未到 cross 且能在 yield 范围前停住或已过 cross 且不覆盖 cross
 
-    void updateLeaderAndGap(Vehicle *leader);
+    void updateLeaderAndGap(Vehicle *leader); // 更新 leader 与 gap
 
     Vehicle *getLeader() const {
         return controllerInfo.leader;
@@ -322,7 +323,7 @@ class Vehicle {
         return 0.0;
     }
 
-    double getIntersectionRelatedSpeed(double interval);
+    double getIntersectionRelatedSpeed(double interval); // 将进入或已在 intersection 时的速度计算
 
     inline bool isRunning() const {
         return controllerInfo.running;
@@ -356,9 +357,9 @@ class Vehicle {
         laneChangeInfo.partnerType = 2, laneChangeInfo.partner = veh;
     }
 
-    void setLane(Lane *nextLane);
+    void setLane(Lane *nextLane); // 设置 controllerInfo.drivable
 
-    void finishChanging();
+    void finishChanging(); // laneChange 完成，修改自身 laneChange 与 shadow 的 laneChangeInfo
 
     inline void setOffset(double offset) {
         laneChangeInfo.offset = offset;
@@ -377,17 +378,17 @@ class Vehicle {
     }
 
     // for lane change
-    inline void makeLaneChangeSignal(double interval) {
+    inline void makeLaneChangeSignal(double interval) { // 交由 laneChange 创建 signalSend 并设置 signal 内各值并寻找目标 lane
         laneChange->makeSignal(interval);
     }
 
-    inline bool planLaneChange() {
+    inline bool planLaneChange() { // 交由 laneChange 判断是否满足 laneChange 条件
         return laneChange->planChange();
     }
 
-    void receiveSignal(Vehicle *sender);
+    void receiveSignal(Vehicle *sender); // laneChange signal 接收，按 priority 判断
 
-    void sendSignal() {
+    void sendSignal() { // 交由 laneChange 向 targetLeader 和 targetFollower 传递信号
         laneChange->sendSignal();
     }
 
@@ -395,7 +396,7 @@ class Vehicle {
         laneChange->clearSignal();
     }
 
-    void updateLaneChangeNeighbor() {
+    void updateLaneChangeNeighbor() { // 交由 laneChange 寻找 laneChange 后的 leader 与 follower
         laneChange->updateLeaderAndFollower();
     }
 
@@ -405,20 +406,20 @@ class Vehicle {
 
     std::list<Vehicle *>::iterator getListIterator();
 
-    void insertShadow(Vehicle *shadow) {
+    void insertShadow(Vehicle *shadow) { // 交由 laneChange 将 shadow 插入 targetLane
         laneChange->insertShadow(shadow);
     }
 
-    bool onValidLane() const {
+    bool onValidLane() const { // 交由 router，当无下一条路且 route 未到末尾说明有误
         return controllerInfo.router.onValidLane();
     }
 
-    Lane *getValidLane() const {
+    Lane *getValidLane() const { // nextLane
         assert(getCurDrivable()->isLane());
         return controllerInfo.router.getValidLane(dynamic_cast<Lane *>(getCurDrivable()));
     }
 
-    bool canChange() const {
+    bool canChange() const { // 交由 laneChange，自己发送了 signal 且未 receive 信号，如receive 说明 receive 信号优先级更高
         return laneChange->canChange();
     }
 
@@ -448,18 +449,18 @@ class Vehicle {
         return laneChange->changing;
     }
 
-    double getMaxOffset() const {
+    double getMaxOffset() const { // 最大偏移量，大于此量表示完成 laneChange
         auto target = laneChange->signalSend->target;
-        return (target->getWidth() + getCurLane()->getWidth()) / 2;
+        return (target->getWidth() + getCurLane()->getWidth()) / 2; // 当前 lane 中心到 targetLane 中心的距离
     }
 
-    void abortLaneChange();
+    void abortLaneChange(); // 由 shadow 调用，终止 laneChange
 
-    void updateRoute();
+    void updateRoute(); // 用 updateShortestPath 更新 route
 
     Road *getFirstRoad();
 
-    void setFirstDrivable();
+    void setFirstDrivable(); // controllerInfo.drivable 初次设置
 
     bool isRouteValid() const {
         return this->routeValid;
@@ -469,7 +470,7 @@ class Vehicle {
         return flow;
     }
 
-    bool setRoute(const std::vector<Road *> &anchor);
+    bool setRoute(const std::vector<Road *> &anchor); // 修改 controllerInfo.route
 
     std::map<std::string, std::string> getInfo() const;
 };

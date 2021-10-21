@@ -18,7 +18,7 @@ class Engine {
     friend class Archive;
 
   private:
-    static bool vehicleCmp(const std::pair<Vehicle *, double> &a, const std::pair<Vehicle *, double> &b) {
+    static bool vehicleCmp(const std::pair<Vehicle *, double> &a, const std::pair<Vehicle *, double> &b) { // 按 dis 从大到小
         return a.second > b.second;
     }
 
@@ -37,7 +37,7 @@ class Engine {
     bool warnings;                                                   // 是否开 waring
     std::vector<std::pair<Vehicle *, double>> pushBuffer;            // vector<pair<Vehicle *, deltadis>> 缓存 drivable 发生变化的车辆
     std::vector<Vehicle *> laneChangeNotifyBuffer;                   // 待 laneChange 的车辆
-    std::set<Vehicle *> vehicleRemoveBuffer;                         // 到达 end 的车辆
+    std::set<Vehicle *> vehicleRemoveBuffer;                         // 将从 RoadNet 移除的车辆
     rapidjson::Document jsonRoot;
     std::string stepLog;
 
@@ -45,68 +45,68 @@ class Engine {
     size_t activeVehicleCount = 0;       // 运行中车辆数
     int seed;                            // 随机数种子
     std::mutex lock;                     // 互斥锁
-    Barrier startBarrier, endBarrier;    // 线程 start 与 end 控制对象
+    Barrier startBarrier, endBarrier;    // 线程控制对象
     std::vector<std::thread> threadPool; // 主程序线程池
     bool finished = false;               // 是否程序执行结束
     std::string dir;                     // 文件夹路径
-    std::ofstream logOut;
+    std::ofstream logOut;                // 输出流
 
-    bool rlTrafficLight; // 是否使用强化学习控制 TrafficLight，如非则使用固定 TrafficLight phase
-    bool laneChange;     // 是否允许变道
-    int manuallyPushCnt = 0;
+    bool rlTrafficLight;     // 是否使用强化学习控制 TrafficLight，如非则使用固定 TrafficLight phase
+    bool laneChange;         // 是否允许变道
+    int manuallyPushCnt = 0; // 通过接口手动 push 入的车辆
 
     int finishedVehicleCnt = 0;      // 累计穿行时间
     double cumulativeTravelTime = 0; // 累计穿行时间
 
   private:
-    void vehicleControl(Vehicle &vehicle, std::vector<std::pair<Vehicle *, double>> &buffer);
+    void vehicleControl(Vehicle &vehicle, std::vector<std::pair<Vehicle *, double>> &buffer); // speed、dis 计算，offset 计算并判断是否完成 laneChange
 
-    void planRoute();
+    void planRoute(); //主线程，待子线程处理完 route 后将有效 vehicle 转入 lane 的 waitingBuffer
 
-    void getAction();
+    void getAction(); // 主线程，交由子线程负责车辆数据计算
 
-    void updateAction();
+    void updateAction(); // 主线程，交由子线程对每个 vehicle 信息进行更新
 
-    void updateLocation();
+    void updateLocation(); // 主线程，交由子线程将离开的 vehicle 从原 drivable 删去并记录跑完 route 的数据，主线程将其加入新 drivable
 
-    void updateLeaderAndGap();
+    void updateLeaderAndGap(); // 主线程，交由子线程更新每个 drivable 上车辆的 leader 与 gap，并更新 lane 的 historyRecord
 
-    void planLaneChange();
+    void planLaneChange(); // 主线程，子线程判断是否可 laneChange，主线程进行 insertShadow
 
     void threadController(std::set<Vehicle *> &vehicles, std::vector<Road *> &roads, std::vector<Intersection *> &intersections,
-                          std::vector<Drivable *> &drivables);
+                          std::vector<Drivable *> &drivables); // 子线程创建
 
-    void threadPlanRoute(const std::vector<Road *> &roads);
+    void threadPlanRoute(const std::vector<Road *> &roads); // 对各 vehicles 判断是否可 laneChange
 
-    void threadGetAction(std::set<Vehicle *> &vehicles);
+    void threadGetAction(std::set<Vehicle *> &vehicles); // vehicle 各数据计算
 
-    void threadUpdateAction(std::set<Vehicle *> &vehicles);
+    void threadUpdateAction(std::set<Vehicle *> &vehicles); // vehicle 信息更新
 
-    void threadUpdateLeaderAndGap(const std::vector<Drivable *> &drivables);
+    void threadUpdateLeaderAndGap(const std::vector<Drivable *> &drivables); // 更新 drivable 上每辆车与前车的距离
 
-    void threadUpdateLocation(const std::vector<Drivable *> &drivables);
+    void threadUpdateLocation(const std::vector<Drivable *> &drivables); // 从各 drivable 去除离开的 vehicle，记录完成 route 车辆，delete 不需要的
 
-    void threadNotifyCross(const std::vector<Intersection *> &intersections);
+    void threadNotifyCross(const std::vector<Intersection *> &intersections); // 更新每个 cross 的信息
 
-    void threadInitSegments(const std::vector<Road *> &roads);
+    void threadInitSegments(const std::vector<Road *> &roads); // 更新 lane 内各 segment 所含的 vehicle 信息
 
-    void threadPlanLaneChange(const std::set<Vehicle *> &vehicles);
+    void threadPlanLaneChange(const std::set<Vehicle *> &vehicles); // 对各 vehicles 判断是否可 laneChange
 
-    void handleWaiting();
+    void handleWaiting(); // 对每个 lane 的 waitingBuffer 的首车，判断其是否可入 lane。如可则进入并更新 leader 与 gap；如不可，则等下一个
 
-    void updateLog();
+    void updateLog(); // log 信息输出
 
-    bool checkWarning();
+    bool checkWarning(); // check data
 
-    bool loadRoadNet(const std::string &jsonFile);
+    bool loadRoadNet(const std::string &jsonFile); // load RoadNet，并向线程池填入信息
 
-    bool loadFlow(const std::string &jsonFilename);
+    bool loadFlow(const std::string &jsonFilename); // load Flow
 
     std::vector<const Vehicle *> getRunningVehicles(bool includeWaiting = false) const;
 
-    void scheduleLaneChange();
+    void scheduleLaneChange(); // 对 notifyBuffer 内满足要求的 vehicle 进行 insertShadow 操作
 
-    void insertShadow(Vehicle *vehicle);
+    void insertShadow(Vehicle *vehicle); // 创建 vehicle 的 shadow 并插入
 
   public:
     std::mt19937 rnd;
@@ -117,29 +117,29 @@ class Engine {
         return interval;
     }
 
-    bool hasLaneChange() const {
+    bool hasLaneChange() const { // 是否允许 laneChange
         return laneChange;
     }
 
-    bool loadConfig(const std::string &configFile);
+    bool loadConfig(const std::string &configFile); // 主 load，load Engine
 
-    void notifyCross();
+    void notifyCross(); // 主线程，交由子线程更新每个 cross 的信息
 
-    void nextStep();
+    void nextStep(); // 执行过程
 
-    bool checkPriority(int priority);
+    bool checkPriority(int priority); // vehiclePool 中是否存在优先级为 priority 的车子
 
-    void pushVehicle(Vehicle *const vehicle, bool pushToDrivable = true);
+    void pushVehicle(Vehicle *const vehicle, bool pushToDrivable = true); // 手动添加车辆
 
     void setLogFile(const std::string &jsonFile, const std::string &logFile);
 
-    void initSegments();
+    void initSegments(); // 主线程，交由子线程完成 Segment 内车辆的更新
 
     ~Engine();
 
     // RL related api
 
-    void pushVehicle(const std::map<std::string, double> &info, const std::vector<std::string> &roads);
+    void pushVehicle(const std::map<std::string, double> &info, const std::vector<std::string> &roads); // 手动添加车辆
 
     size_t getVehicleCount() const;
 
@@ -175,6 +175,8 @@ class Engine {
         rnd.seed(seed);
     }
 
+    bool setRoute(const std::string &vehicle_id, const std::vector<std::string> &anchor_id);
+
     void reset(bool resetRnd = false);
 
     // archive
@@ -187,8 +189,6 @@ class Engine {
     }
 
     void loadFromFile(const char *fileName);
-
-    bool setRoute(const std::string &vehicle_id, const std::vector<std::string> &anchor_id);
 };
 
 } // namespace CityFlow

@@ -16,16 +16,14 @@ Vehicle::ControllerInfo::ControllerInfo(Vehicle *vehicle, const Vehicle::Control
 }
 
 Vehicle::Vehicle(const Vehicle &vehicle, Flow *flow)
-    : vehicleInfo(vehicle.vehicleInfo), controllerInfo(this, vehicle.controllerInfo), laneChangeInfo(vehicle.laneChangeInfo), buffer(vehicle.buffer),
-      priority(vehicle.priority), id(vehicle.id), engine(vehicle.engine), laneChange(std::make_shared<SimpleLaneChange>(this, *vehicle.laneChange)),
-      flow(flow) {
+    : vehicleInfo(vehicle.vehicleInfo), controllerInfo(this, vehicle.controllerInfo), laneChangeInfo(vehicle.laneChangeInfo), buffer(vehicle.buffer), priority(vehicle.priority), id(vehicle.id),
+      engine(vehicle.engine), laneChange(std::make_shared<SimpleLaneChange>(this, *vehicle.laneChange)), flow(flow) {
     enterTime = vehicle.enterTime;
 }
 
-Vehicle::Vehicle(const Vehicle &vehicle, const std::string &id, Engine *engine,
-                 Flow *flow) // shadow，除 laneChange（新建）和 flow（nullptr）与 router.vehicle 外全部一致
-    : vehicleInfo(vehicle.vehicleInfo), controllerInfo(this, vehicle.controllerInfo), laneChangeInfo(vehicle.laneChangeInfo), buffer(vehicle.buffer),
-      id(id), engine(engine), laneChange(std::make_shared<SimpleLaneChange>(this)), flow(flow) {
+Vehicle::Vehicle(const Vehicle &vehicle, const std::string &id, Engine *engine, Flow *flow) // shadow 创建，除 laneChange（新建）和 flow（nullptr）与 router.vehicle 外全部一致
+    : vehicleInfo(vehicle.vehicleInfo), controllerInfo(this, vehicle.controllerInfo), laneChangeInfo(vehicle.laneChangeInfo), buffer(vehicle.buffer), id(id), engine(engine),
+      laneChange(std::make_shared<SimpleLaneChange>(this)), flow(flow) {
     while (engine->checkPriority(priority = engine->rnd()))
         ;
     controllerInfo.router.setVehicle(this); // 修改 route 的对应 vehicle
@@ -33,66 +31,64 @@ Vehicle::Vehicle(const Vehicle &vehicle, const std::string &id, Engine *engine,
 }
 
 Vehicle::Vehicle(const VehicleInfo &vehicleInfo, const std::string &id, Engine *engine, Flow *flow)
-    : vehicleInfo(vehicleInfo), controllerInfo(this, vehicleInfo.route, &(engine->rnd)), id(id), engine(engine),
-      laneChange(std::make_shared<SimpleLaneChange>(this)), flow(flow) {
-    controllerInfo.approachingIntersectionDistance =
-        vehicleInfo.maxSpeed * vehicleInfo.maxSpeed / vehicleInfo.usualNegAcc / 2 + vehicleInfo.maxSpeed * engine->getInterval() * 2;
+    : vehicleInfo(vehicleInfo), controllerInfo(this, vehicleInfo.route, &(engine->rnd)), id(id), engine(engine), laneChange(std::make_shared<SimpleLaneChange>(this)), flow(flow) {
+    controllerInfo.approachingIntersectionDistance = vehicleInfo.maxSpeed * vehicleInfo.maxSpeed / vehicleInfo.usualNegAcc / 2 + vehicleInfo.maxSpeed * engine->getInterval() * 2;
     while (engine->checkPriority(priority = engine->rnd()))
         ;
     enterTime = engine->getCurrentTime();
 }
 
-void Vehicle::setDeltaDistance(double dis) { // 由 dis 算出当前在哪条 drivable 上
-    if (!buffer.isDisSet || dis < buffer.deltaDis) {
-        unSetEnd();
-        unSetDrivable();
+void Vehicle::setDeltaDistance(double dis) {         // 由 dis 算出当前在哪条 drivable 上并更新 buffer
+    if (!buffer.isDisSet || dis < buffer.deltaDis) { // 条件二为何会出现？
+        unSetEnd();                                  // 用于条件二
+        unSetDrivable();                             // 用于条件二
         buffer.deltaDis = dis;
         dis = dis + controllerInfo.dis; // 到目前所在 drivable 起点的总距离
         Drivable *drivable = getCurDrivable();
         for (int i = 0; drivable && dis > drivable->getLength(); ++i) {
             dis -= drivable->getLength();
             Drivable *nextDrivable = controllerInfo.router.getNextDrivable(i);
-            if (nextDrivable == nullptr) { // 到 end
+            if (nextDrivable == nullptr) { // 没有下一 drivable 且 dis 大于当前 drivable 长度，即此时已到达末尾
                 assert(controllerInfo.router.isLastRoad(drivable));
                 setEnd(true);
             }
             drivable = nextDrivable;
-            setDrivable(drivable); // 存入 buffer
+            setDrivable(drivable); // 新 drivable 存入 buffer
         }
         setDis(dis);
     }
 }
 
-void Vehicle::setSpeed(double speed) {
+void Vehicle::setSpeed(double speed) { // 速度设置
     buffer.speed = speed;
     buffer.isSpeedSet = true;
 }
 
-Drivable *Vehicle::getChangedDrivable() const {
+Drivable *Vehicle::getChangedDrivable() const { // 如 drivable 改变则返回新的 drivable
     if (!buffer.isDrivableSet)
         return nullptr;
     return buffer.drivable;
 }
 
-Point Vehicle::getPoint() const { // ?
-    if (fabs(laneChangeInfo.offset) < eps || !controllerInfo.drivable->isLane()) {
-        return controllerInfo.drivable->getPointByDistance(controllerInfo.dis);
-    } else {
+Point Vehicle::getPoint() const {                                                  // 获取 vehicle 当前坐标
+    if (fabs(laneChangeInfo.offset) < eps || !controllerInfo.drivable->isLane()) { // 偏移量很小或者在 laneLink 上
+        return controllerInfo.drivable->getPointByDistance(controllerInfo.dis);    // 直接由距离计算
+    } else {                                                                       // 在 lane 上且 laneChange 进行中
         assert(controllerInfo.drivable->isLane());
         const Lane *lane = static_cast<const Lane *>(controllerInfo.drivable);
-        Point origin = lane->getPointByDistance(controllerInfo.dis);
+        Point origin = lane->getPointByDistance(controllerInfo.dis); // 未 laneChange 时位置
         Point next;
         double percentage;
         std::vector<Lane> &lans = lane->getBelongRoad()->getLanes();
-        if (laneChangeInfo.offset > 0) {
-            next = lans[lane->getLaneIndex() + 1].getPointByDistance(controllerInfo.dis);
-            percentage = 2 * laneChangeInfo.offset / (lane->getWidth() + lans[lane->getLaneIndex() + 1].getWidth());
+        if (laneChangeInfo.offset > 0) {                                                                             // 向外侧便宜
+            next = lans[lane->getLaneIndex() + 1].getPointByDistance(controllerInfo.dis);                            // 外侧同距离位置
+            percentage = 2 * laneChangeInfo.offset / (lane->getWidth() + lans[lane->getLaneIndex() + 1].getWidth()); // 横向所占比例
         } else {
             next = lans[lane->getLaneIndex() - 1].getPointByDistance(controllerInfo.dis);
             percentage = -2 * laneChangeInfo.offset / (lane->getWidth() + lans[lane->getLaneIndex() - 1].getWidth());
         }
         Point cur;
-        cur.x = next.x * percentage + origin.x * (1 - percentage);
+        cur.x = next.x * percentage + origin.x * (1 - percentage); // 位置计算
         cur.y = next.y * percentage + origin.y * (1 - percentage);
         return cur;
     }
@@ -136,18 +132,18 @@ void Vehicle::update() { // TODO: use something like reflection?    buffer 信�
     }
 }
 
-std::pair<Point, Point> Vehicle::getCurPos() const {
-    std::pair<Point, Point> ret; // 头尾坐标
-    ret.first = controllerInfo.drivable->getPointByDistance(controllerInfo.dis);
-    Point direction = controllerInfo.drivable->getDirectionByDistance(controllerInfo.dis);
+std::pair<Point, Point> Vehicle::getCurPos() const {                                       // 获取 vehicle 头尾坐标
+    std::pair<Point, Point> ret;                                                           // 头尾坐标
+    ret.first = controllerInfo.drivable->getPointByDistance(controllerInfo.dis);           // 车头坐标
+    Point direction = controllerInfo.drivable->getDirectionByDistance(controllerInfo.dis); // 行驶方向
     Point tail(ret.first);
     tail.x -= direction.x * vehicleInfo.len;
     tail.y -= direction.y * vehicleInfo.len;
-    ret.second = tail;
+    ret.second = tail; // 车尾坐标
     return ret;
 }
 
-void Vehicle::updateLeaderAndGap(Vehicle *leader) {                          // 更新与 leader 间的距离
+void Vehicle::updateLeaderAndGap(Vehicle *leader) {                          // 更新 leader 与 gap
     if (leader != nullptr && leader->getCurDrivable() == getCurDrivable()) { // 传入 leader 且和当前车在同一 lane
         controllerInfo.leader = leader;
         controllerInfo.gap = leader->getDistance() - leader->getLen() - controllerInfo.dis;
@@ -181,8 +177,7 @@ void Vehicle::updateLeaderAndGap(Vehicle *leader) {                          // 
             }
             // 当前 drivable 中无车，再向前找
             dis += drivable->getLength();
-            if (dis > vehicleInfo.maxSpeed * vehicleInfo.maxSpeed / vehicleInfo.usualNegAcc / 2 +
-                          vehicleInfo.maxSpeed * engine->getInterval() * 2) // 多次寻找后 dis 大于刹车距离，停止寻找
+            if (dis > vehicleInfo.maxSpeed * vehicleInfo.maxSpeed / vehicleInfo.usualNegAcc / 2 + vehicleInfo.maxSpeed * engine->getInterval() * 2) // ？多次寻找后 dis 距离过大，停止寻找
                 return;
         }
         return;
@@ -190,7 +185,7 @@ void Vehicle::updateLeaderAndGap(Vehicle *leader) {                          // 
 }
 
 double Vehicle::getNoCollisionSpeed(double vL, double dL, double vF, double dF, double gap, double interval,
-                                    double targetGap) const { // 在 interval 时间后在给定数据下保持距离为 targetGap 的速度
+                                    double targetGap) const { // 在给定数据下减速使最终距离为 targetGap，减速 interval 时间后的速度
     double c = vF * interval / 2 + targetGap - 0.5 * vL * vL / dL - gap;
     double a = 0.5 / dF;
     double b = 0.5 * interval;
@@ -202,7 +197,7 @@ double Vehicle::getNoCollisionSpeed(double vL, double dL, double vF, double dF, 
 }
 
 // should be move to seperate CarFollowing (Controller?) class later?
-double Vehicle::getCarFollowSpeed(double interval) { // 跟随速度，此处判断过是否使用 customSpeed
+double Vehicle::getCarFollowSpeed(double interval) { // 跟随速度
     Vehicle *leader = getLeader();
     if (leader == nullptr)                                                      // 没有前车
         return hasSetCustomSpeed() ? buffer.customSpeed : vehicleInfo.maxSpeed; // 习惯速度/上限速度
@@ -220,18 +215,16 @@ double Vehicle::getCarFollowSpeed(double interval) { // 跟随速度，此处判
     if (vehicleInfo.speed > leaderSpeed) {
         assumeDecel = vehicleInfo.speed - leaderSpeed;
     }
-    v = min2double(v, getNoCollisionSpeed(leader->getSpeed(), leader->getUsualNegAcc(), vehicleInfo.speed, vehicleInfo.usualNegAcc,
-                                          controllerInfo.gap, interval, vehicleInfo.minGap)); // 常规情况下制动保持 minGap
-    v = min2double(v, (controllerInfo.gap + (leaderSpeed + assumeDecel / 2) * interval - vehicleInfo.speed * interval / 2) /
-                          (vehicleInfo.headwayTime + interval / 2)); // ?
+    v = min2double(v, getNoCollisionSpeed(leader->getSpeed(), leader->getUsualNegAcc(), vehicleInfo.speed, vehicleInfo.usualNegAcc, controllerInfo.gap, interval,
+                                          vehicleInfo.minGap)); // 常规情况下制动保持 minGap
+    v = min2double(v, (controllerInfo.gap + (leaderSpeed + assumeDecel / 2) * interval - vehicleInfo.speed * interval / 2) / (vehicleInfo.headwayTime + interval / 2)); // ?
 
     return v;
 }
 
 double Vehicle::getStopBeforeSpeed(double distance, double interval) const { // 能在 distance 内停下时经过 interval 时间后的速度
     assert(distance >= 0);
-    if (getBrakeDistanceAfterAccel(vehicleInfo.usualPosAcc, vehicleInfo.usualNegAcc, interval) <
-        distance) // 如果加速 interval 时间后再减速距离依旧满足，那就加速
+    if (getBrakeDistanceAfterAccel(vehicleInfo.usualPosAcc, vehicleInfo.usualNegAcc, interval) < distance) // 如果加速 interval 时间后再减速距离依旧满足，那就加速
         return vehicleInfo.speed + vehicleInfo.usualPosAcc * interval;
     double takeInterval = 2 * distance / (vehicleInfo.speed + eps) / interval; // 在 distance 距离内减速到 0 需要几个 interval
     if (takeInterval >= 1) {
@@ -250,12 +243,10 @@ int Vehicle::getReachSteps(double distance, double targetSpeed, double acc) cons
     }
     double distanceUntilTargetSpeed = getDistanceUntilSpeed(targetSpeed, acc); // 加速到 targetSpeed 距离
     double interval = engine->getInterval();
-    if (distanceUntilTargetSpeed > distance) { // distance 内加速不到 targetSpeed
-        return std::ceil((std::sqrt(vehicleInfo.speed * vehicleInfo.speed + 2 * acc * distance) - vehicleInfo.speed) / acc /
-                         interval); // 在 distance 内加到最终速所用时间段
+    if (distanceUntilTargetSpeed > distance) {                                                                                          // distance 内加速不到 targetSpeed
+        return std::ceil((std::sqrt(vehicleInfo.speed * vehicleInfo.speed + 2 * acc * distance) - vehicleInfo.speed) / acc / interval); // 在 distance 内加到最终速所用时间段
     } else {
-        return std::ceil((targetSpeed - vehicleInfo.speed) / acc / interval) +
-               std::ceil((distance - distanceUntilTargetSpeed) / targetSpeed / interval); // distance 内加速并匀速所用时间段
+        return std::ceil((targetSpeed - vehicleInfo.speed) / acc / interval) + std::ceil((distance - distanceUntilTargetSpeed) / targetSpeed / interval); // distance 内加速并匀速所用时间段
     }
 }
 
@@ -282,8 +273,7 @@ bool Vehicle::isIntersectionRelated() { // 是否已在 intersection 或将进�
         return true;
     if (controllerInfo.drivable->isLane()) {
         Drivable *drivable = getNextDrivable();
-        if (drivable && drivable->isLaneLink() &&
-            controllerInfo.drivable->getLength() - controllerInfo.dis <= controllerInfo.approachingIntersectionDistance) {
+        if (drivable && drivable->isLaneLink() && controllerInfo.drivable->getLength() - controllerInfo.dis <= controllerInfo.approachingIntersectionDistance) {
             return true;
         }
     }
@@ -312,10 +302,9 @@ ControlInfo Vehicle::getNextSpeed(double interval) { // TODO: pass as parameter 
     }
 
     if (laneChange) {
-        v = min2double(v, laneChange->yieldSpeed(interval));
-        if (!controllerInfo.router.onValidLane()) { // 上错路了 ？
-            double vn =
-                getNoCollisionSpeed(0, 1, getSpeed(), getMaxNegAcc(), getCurDrivable()->getLength() - getDistance(), interval, getMinGap()); // 刹车
+        v = min2double(v, laneChange->yieldSpeed(interval));                                                                                         // 让步速度
+        if (!controllerInfo.router.onValidLane()) {                                                                                                  // 上错路了 ？
+            double vn = getNoCollisionSpeed(0, 1, getSpeed(), getMaxNegAcc(), getCurDrivable()->getLength() - getDistance(), interval, getMinGap()); // 刹车
             v = min2double(v, vn);
         }
     }
@@ -332,14 +321,11 @@ double Vehicle::getIntersectionRelatedSpeed(double interval) { // 将进入或�
     const LaneLink *laneLink = nullptr;
     if (nextDrivable && nextDrivable->isLaneLink()) { // 即将进入 intersection
         laneLink = (LaneLink *)nextDrivable;
-        if (!laneLink->isAvailable() ||
-            !laneLink->getEndLane()->canEnter(
-                this)) { // not only the first vehicle should follow intersection logic  由于红灯或 endLane 车辆过多而不可通行
+        if (!laneLink->isAvailable() || !laneLink->getEndLane()->canEnter(this)) { // not only the first vehicle should follow intersection logic  由于红灯或 endLane 车辆过多而不可通行
             if (getMinBrakeDistance() > controllerInfo.drivable->getLength() - controllerInfo.dis) { // 无法在线前刹车
                 // TODO: what if it cannot brake before red light?
             } else {
-                v = min2double(
-                    v, getStopBeforeSpeed(controllerInfo.drivable->getLength() - controllerInfo.dis, interval)); // 能停下的话经过 interval 时间的速度
+                v = min2double(v, getStopBeforeSpeed(controllerInfo.drivable->getLength() - controllerInfo.dis, interval)); // 能停下的话经过 interval 时间的速度
                 return v;
             }
         }
@@ -349,13 +335,12 @@ double Vehicle::getIntersectionRelatedSpeed(double interval) { // 将进入或�
     }
     if (laneLink == nullptr && controllerInfo.drivable->isLaneLink())      // 已在 intersection
         laneLink = static_cast<const LaneLink *>(controllerInfo.drivable); // 获取当前 laneLink
-    double distanceToLaneLinkStart = controllerInfo.drivable->isLane()
-                                         ? -(controllerInfo.drivable->getLength() - controllerInfo.dis)
-                                         : controllerInfo.dis; // vehicle 距离 laneLink start 的 距离 <0 表示在 laneLink 前，>0 在 laneLink 后
+    double distanceToLaneLinkStart = controllerInfo.drivable->isLane() ? -(controllerInfo.drivable->getLength() - controllerInfo.dis)
+                                                                       : controllerInfo.dis; // vehicle 距离 laneLink start 的 距离 <0 表示在 laneLink 前，>0 在 laneLink 后
     double distanceOnLaneLink;
     for (auto &cross : laneLink->getCrosses()) {                 // 对当前 laneLink 上每个 cross
         distanceOnLaneLink = cross->getDistanceByLane(laneLink); // cross 距 laneLink 起点距离
-        if (distanceOnLaneLink < distanceToLaneLinkStart) // 车头已过此 cross，说明先前已对当前 cross 进行了 canPass 判断，无需再考虑
+        if (distanceOnLaneLink < distanceToLaneLinkStart)        // 车头已过此 cross，说明先前已对当前 cross 进行了 canPass 判断，无需再考虑
             continue;
         if (!cross->canPass(this, laneLink, distanceToLaneLinkStart)) { // 当前不可通过
             v = min2double(v, getStopBeforeSpeed(distanceOnLaneLink - distanceToLaneLinkStart - vehicleInfo.yieldDistance,
@@ -367,12 +352,12 @@ double Vehicle::getIntersectionRelatedSpeed(double interval) { // 将进入或�
     return v;
 }
 
-void Vehicle::finishChanging() {
+void Vehicle::finishChanging() { // laneChange 完成，修改自身 laneChange 与 shadow 的 laneChangeInfo
     laneChange->finishChanging();
     setEnd(true);
 }
 
-void Vehicle::setLane(Lane *nextLane) {
+void Vehicle::setLane(Lane *nextLane) { // 设置 controllerInfo.drivable
     controllerInfo.drivable = nextLane;
 }
 
@@ -380,7 +365,7 @@ Drivable *Vehicle::getCurDrivable() const {
     return controllerInfo.drivable;
 }
 
-void Vehicle::receiveSignal(Vehicle *sender) { // laneChange signal 接收
+void Vehicle::receiveSignal(Vehicle *sender) { // laneChange signal 接收，按 priority 判断
     if (laneChange->changing)                  // 当前车正在 langChange，无视
         return;
     auto signal_recv = laneChange->signalRecv;                               // 之前接收的 signal
@@ -388,9 +373,8 @@ void Vehicle::receiveSignal(Vehicle *sender) { // laneChange signal 接收
     int curPriority = signal_recv ? signal_recv->source->getPriority() : -1; // 获取之前 receiveSignal 来源 vehicle 的 priority
     int newPriority = sender->getPriority();                                 // 当前 receiveSignal 来源 vehicle 的 priority
 
-    if ((!signal_recv || curPriority < newPriority) &&
-        (!signal_send || priority < newPriority)) // （尚未接收 || 新 receive 的优先级更高更高） && (自己未发 || sender 优先级更高)
-        laneChange->signalRecv = sender->laneChange->signalSend; // 更换 signal
+    if ((!signal_recv || curPriority < newPriority) && (!signal_send || priority < newPriority)) // （尚未接收 || sender 的优先级更高更高） && (自己未发 || sender 优先级更高)
+        laneChange->signalRecv = sender->laneChange->signalSend;                                 // 更换 signalRecv
 }
 
 std::list<Vehicle *>::iterator Vehicle::getListIterator() {
@@ -401,7 +385,7 @@ std::list<Vehicle *>::iterator Vehicle::getListIterator() {
     return result;
 }
 
-void Vehicle::abortLaneChange() {
+void Vehicle::abortLaneChange() { // 由 shadow 调用，终止 laneChange
     assert(laneChangeInfo.partner);
     this->setEnd(true);
     laneChange->abortChanging();
@@ -411,11 +395,11 @@ Road *Vehicle::getFirstRoad() {
     return controllerInfo.router.getFirstRoad();
 }
 
-void Vehicle::setFirstDrivable() {
+void Vehicle::setFirstDrivable() { // controllerInfo.drivable 初次设置
     controllerInfo.drivable = controllerInfo.router.getFirstDrivable();
 }
 
-void Vehicle::updateRoute() {
+void Vehicle::updateRoute() { // 用 updateShortestPath 更新 route
     routeValid = controllerInfo.router.updateShortestPath();
 }
 
@@ -423,7 +407,7 @@ bool Vehicle::setRoute(const std::vector<Road *> &anchor) {
     return controllerInfo.router.setRoute(anchor);
 }
 
-std::map<std::string, std::string> Vehicle::getInfo() const {
+std::map<std::string, std::string> Vehicle::getInfo() const { //// 对应 id 车辆信息获取 <title, info>
     git std::map<std::string, std::string> info;
     info["running"] = std::to_string(isRunning());
     if (!isRunning())
