@@ -35,8 +35,7 @@ class Segment {
 
     Segment() = default;
 
-    Segment(size_t index, Lane *belongLane, double startPos, double endPos)
-        : index(index), belongLane(belongLane), startPos(startPos), endPos(endPos) {}
+    Segment(size_t index, Lane *belongLane, double startPos, double endPos) : index(index), belongLane(belongLane), startPos(startPos), endPos(endPos) {}
 
     double getStartPos() const {
         return this->startPos;
@@ -145,7 +144,7 @@ class Cross {
   private:
     LaneLink *laneLinks[2];                        // intersection 的两条 laneLink 相交形成 cross
     Vehicle *notifyVehicles[2];                    // 每个 cross 中可能冲突的车
-    double notifyDistances[2];                     // <0 表示在 cross 前，>0 表示在 cross 后，距离 cross 的距离
+    double notifyDistances[2];                     // <0 表示在 cross 后，>0 表示在 cross 前，距离 cross 的距离
     double distanceOnLane[2];                      // 交叉点距离 laneLink 起点的距离
     double leaveDistance = 0, arriveDistance = 30; // TODO
     double ang;                                    // 夹角的弧度
@@ -162,9 +161,8 @@ class Cross {
 
     void notify(LaneLink *laneLink, Vehicle *vehicle, double notifyDistance); // notify all the crosspoint of its arrival
 
-    bool canPass(
-        const Vehicle *vehicle, const LaneLink *laneLink,
-        double distanceToLaneLinkStart) const; // XXX: change to LaneLink based? 当前车辆是否可以在距离 laneLink start dis 处不停车通过 intersection
+    bool canPass(const Vehicle *vehicle, const LaneLink *laneLink,
+                 double distanceToLaneLinkStart) const; // XXX: change to LaneLink based? 当前车辆是否可以在距离 laneLink start dis 处不停车通过 intersection
 
     void clearNotify() {
         notifyVehicles[0] = notifyVehicles[1] = nullptr;
@@ -476,8 +474,7 @@ class Lane : public Drivable {
 
     double getHistoryAverageSpeed() const;
 
-    Vehicle *getVehicleBeforeDistance(
-        double dis, size_t segmentIndex) const; // TODO: set a limit, not too far way 从 segment[segmentIndex] 向前距起点距离小于 dis 的第一辆车
+    Vehicle *getVehicleBeforeDistance(double dis, size_t segmentIndex) const; // TODO: set a limit, not too far way 从 segment[segmentIndex] 向前距起点距离小于 dis 的第一辆车
 
     Vehicle *getVehicleAfterDistance(double dis, size_t segmentIndex) const; // 从 segment[segmentIndex] 向后距起点距离大于 dis 的第一辆车
 };
